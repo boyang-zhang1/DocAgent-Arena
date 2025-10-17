@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional
 from pathlib import Path
 from .preprocessors.base import BasePreprocessor, ProcessedDataset
 from .preprocessors.squad import SquadPreprocessor
+from .preprocessors.qasper_preprocessor import QasperPreprocessor
 
 
 class DatasetLoader:
@@ -23,6 +24,7 @@ class DatasetLoader:
     PREPROCESSORS: Dict[str, type] = {
         'squad': SquadPreprocessor,
         'squad2': SquadPreprocessor,
+        'qasper': QasperPreprocessor,
     }
 
     def __init__(self, dataset_type: str):
@@ -45,29 +47,38 @@ class DatasetLoader:
         self.dataset_type = dataset_type.lower()
         self.preprocessor: BasePreprocessor = self.PREPROCESSORS[self.dataset_type]()
 
-    def load(self, file_path: str, **kwargs) -> ProcessedDataset:
+    def load(self, file_path: Optional[str] = None, **kwargs) -> ProcessedDataset:
         """
         Load and preprocess dataset file.
 
         Args:
-            file_path: Path to dataset file
+            file_path: Path to dataset file (None for datasets loaded from API)
             **kwargs: Preprocessor-specific options
                 For SQuAD:
                     - filter_impossible: bool = True
                     - max_samples: int = None
+                For Qasper:
+                    - split: str = 'train'
+                    - max_papers: int = None
+                    - filter_unanswerable: bool = True
 
         Returns:
             ProcessedDataset with standardized samples
 
         Raises:
-            FileNotFoundError: If file_path does not exist
+            FileNotFoundError: If file_path is required but does not exist
         """
-        path = Path(file_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Dataset file not found: {file_path}")
+        # Some datasets (like Qasper) load from API and don't need file_path
+        if file_path is not None:
+            path = Path(file_path)
+            if not path.exists():
+                raise FileNotFoundError(f"Dataset file not found: {file_path}")
+            file_path_str = str(path)
+        else:
+            file_path_str = None
 
         # Delegate to appropriate preprocessor
-        processed = self.preprocessor.process(str(path), **kwargs)
+        processed = self.preprocessor.process(file_path_str, **kwargs)
 
         return processed
 
@@ -85,3 +96,27 @@ class DatasetLoader:
         """
         loader = DatasetLoader('squad')
         return loader.load(file_path, **kwargs)
+
+    @staticmethod
+    def load_qasper(split: str = "train", **kwargs) -> ProcessedDataset:
+        """
+        Convenience method to load Qasper dataset.
+
+        Args:
+            split: Dataset split ('train', 'validation', 'test')
+            **kwargs: Qasper preprocessor options
+                - max_papers: int = None (None = all papers, or set limit for testing)
+                - filter_unanswerable: bool = True
+
+        Returns:
+            ProcessedDataset with Qasper samples (questions + raw PDF text)
+
+        Example:
+            # Load all papers from train split
+            dataset = DatasetLoader.load_qasper(split='train')
+
+            # Load first 10 papers for quick testing
+            dataset = DatasetLoader.load_qasper(split='train', max_papers=10)
+        """
+        loader = DatasetLoader('qasper')
+        return loader.load(file_path=None, split=split, **kwargs)

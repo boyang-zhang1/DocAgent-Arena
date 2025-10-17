@@ -6,7 +6,7 @@ A comprehensive platform for comparing and benchmarking different RAG (Retrieval
 
 RAGRace provides a standardized framework to evaluate and compare RAG providers using unified interfaces and automated scoring. The platform supports multiple providers with a consistent `BaseAdapter` interface for fair, apples-to-apples comparison.
 
-**Current Status**: 3 RAG providers integrated with 54 passing tests (44 unit + 10 integration).
+**Current Status**: 3 RAG providers integrated with 54+ passing tests. Complete end-to-end evaluation on Qasper dataset (1,585 research papers with 5,049 questions).
 
 ## Integrated Providers
 
@@ -72,6 +72,42 @@ print(f"Context chunks: {len(response.context)}")
 print(f"Latency: {response.latency_ms:.2f}ms")
 ```
 
+## Datasets
+
+RAGRace supports multiple datasets for evaluation:
+
+| Dataset | Type | Papers | Questions | Format | Status |
+|---------|------|--------|-----------|--------|--------|
+| **SQuAD 2.0** | Q&A on Wikipedia | - | 150K+ | Text paragraphs | ✅ Integrated |
+| **Qasper** | Q&A on Research Papers | 1,585 | 5,049 | Original PDFs from arxiv | ✅ Integrated |
+
+### Qasper Dataset
+
+Complete integration with original research papers:
+
+```python
+from src.datasets.loader import DatasetLoader
+
+# Load Qasper papers with questions
+dataset = DatasetLoader.load_qasper(
+    split='train',
+    max_papers=10,  # None = all 888 papers
+    filter_unanswerable=True
+)
+
+# Each sample contains:
+# - question: Research question about the paper
+# - context: Raw PDF text (realistic, with formatting artifacts)
+# - ground_truth: Expert-annotated answer
+# - metadata: paper_id, pdf_path, question_id, etc.
+```
+
+**Features:**
+- Downloads original PDFs from arxiv (cached locally)
+- 888 train papers, 281 validation, 416 test
+- Questions asked by regular readers, answered by NLP practitioners
+- Tests RAG on long-form scientific documents (10K+ tokens)
+
 ## Running Tests
 
 ```bash
@@ -80,6 +116,17 @@ pytest tests/ -v -k "not integration"
 
 # Run integration tests (real API calls, costs money)
 pytest tests/ -v -m integration -s
+
+# Run RAGRace comparison on Qasper (3 providers, 1 paper, 3 questions)
+pytest tests/test_qasper_rag_e2e.py -v -s -m integration
+```
+
+### RAGRace End-to-End Test
+
+Complete 3-way provider comparison on Qasper dataset:
+
+```bash
+pytest tests/test_qasper_rag_e2e.py::TestQasperRAGRace::test_ragrace_3_providers_qasper -v -s -m integration
 ```
 
 ## Project Structure
@@ -113,9 +160,11 @@ RAGRace/
 ## Key Features
 
 - ✅ **Standardized Interface**: All providers implement `BaseAdapter` for fair comparison
-- ✅ **Comprehensive Testing**: 54 tests with real API validation
+- ✅ **Comprehensive Testing**: 54+ tests with real API validation
 - ✅ **Multiple Providers**: LlamaIndex, LandingAI, Reducto (more coming)
-- ✅ **Dataset Support**: SQuAD 2.0 loader with Ragas evaluation
+- ✅ **Dataset Support**: SQuAD 2.0 + Qasper (research papers) with Ragas evaluation
+- ✅ **End-to-End RAGRace**: Complete 3-way comparison on original PDFs
+- ✅ **Fair Evaluation**: All providers tested on SAME PDF format with SAME questions
 - ✅ **Web Research**: Uses Playwright MCP to read actual API documentation
 
 ## Development

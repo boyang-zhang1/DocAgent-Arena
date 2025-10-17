@@ -1,0 +1,107 @@
+# Qasper Dataset Metadata
+# This file is committed to git to provide dataset context to AI
+# Actual PDF files are NOT committed (cached locally)
+
+name: Qasper
+version: "1.0"
+type: qasper
+source_url: https://huggingface.co/datasets/allenai/qasper
+paper_url: https://arxiv.org/abs/2105.03011
+
+description: >
+  QASPER (Question Answering on Scholarly Publications Enhanced by Retrieval).
+  1,585 NLP research papers with 5,049 information-seeking questions.
+  Questions asked by regular readers, answered by NLP practitioners.
+  Tests RAG systems on long-form scientific documents (full papers).
+
+splits:
+  train:
+    papers: 888
+    questions: ~2850
+    source: HuggingFace datasets
+
+  validation:
+    papers: 281
+    questions: ~900
+    source: HuggingFace datasets
+
+  test:
+    papers: 416
+    questions: ~1300
+    source: HuggingFace datasets
+
+structure:
+  format: PDF (downloaded from arxiv) + HuggingFace metadata
+  paper_source: arxiv.org (PDFs)
+  questions_source: HuggingFace datasets library
+  schema:
+    paper_id: string (arxiv ID, e.g., "1909.00694")
+    title: string (paper title)
+    pdf_text: string (raw extracted text - no preprocessing)
+    qas:
+      - question: string
+        question_id: string (unique hash)
+        answers: list (multiple annotators, multiple answer types)
+
+answer_types:
+  - extractive: Spans from paper text
+  - abstractive: Free-form text answers
+  - boolean: Yes/No answers
+  - unanswerable: Questions with no answer in paper
+
+features:
+  - Full-text research papers (long context, 10k+ tokens)
+  - Expert annotations (both Q and A)
+  - Multiple answer types
+  - Evidence grounding
+  - Domain-specific (NLP papers)
+  - Realistic information-seeking questions
+
+sample_papers:
+  - id: "1909.00694"
+    title: "Minimally Supervised Learning of Affective Events Using Discourse Relations"
+  - id: "1909.01380"
+    title: "Clinical Concept Extraction with Contextual Word Embedding"
+  - id: "1909.01642"
+    title: "Incorporating Priors with Feature Attribution on Text Classification"
+
+usage:
+  loader: DatasetLoader.load_qasper(split='train')
+  preprocessor: QasperPreprocessor
+  options:
+    - split: 'train' | 'validation' | 'test'
+    - max_papers: int (default None = all papers, set limit for testing)
+    - filter_unanswerable: bool (default True)
+  examples:
+    - Load all papers: DatasetLoader.load_qasper(split='train')
+    - Load 10 papers: DatasetLoader.load_qasper(split='train', max_papers=10)
+
+data_storage:
+  pdfs: data/datasets/Qasper/pdfs/*.pdf (NOT committed, cached locally)
+  parquet: data/datasets/Qasper/cache/*.parquet (NOT committed, cached locally)
+  metadata: Loaded from HuggingFace parquet files
+  cache_policy: Parquet and PDFs cached after first download
+
+notes:
+  - PDFs downloaded on first load (cached for reuse)
+  - Rate limiting: 3s between downloads (respect arxiv)
+  - Raw PDF text used (no preprocessing - realistic RAG eval)
+  - Papers that fail to download are skipped
+  - Requires: arxiv>=2.0.0, pypdf>=3.0.0, datasets>=4.0.0
+  - License: CC-BY-4.0
+
+evaluation_metrics:
+  - Exact Match (EM) for extractive answers
+  - F1 Score for extractive answers
+  - ROUGE/BLEU for abstractive answers
+  - Answer type accuracy (unanswerable detection)
+  - Evidence recall (retrieval quality)
+  - Retrieval precision@K
+
+why_qasper:
+  - Tests long-form document RAG (full papers vs paragraphs)
+  - Real PDF text (headers, footers, formatting issues)
+  - Domain-specific technical content
+  - Multi-hop reasoning requirements
+  - Diverse answer types
+  - Evidence grounding enables retrieval evaluation

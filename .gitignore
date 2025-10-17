@@ -49,6 +49,7 @@ env/
 data/datasets/**/*.json
 data/datasets/**/*.csv
 data/datasets/**/*.parquet
+data/datasets/**/*.pdf
 data/cache/
 data/results/
 
