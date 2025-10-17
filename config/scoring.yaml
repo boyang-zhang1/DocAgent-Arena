@@ -2,8 +2,8 @@
 # LLM-based evaluation with structured outputs
 
 scoring:
-  # Use GPT-4o-mini for cost efficiency
-  model: gpt-4o-mini
+  # Use GPT-5-nano for cost efficiency
+  model: gpt-5-nano
   api_key_env: OPENAI_API_KEY
 
   # Batch all predictions in ONE prompt for:
