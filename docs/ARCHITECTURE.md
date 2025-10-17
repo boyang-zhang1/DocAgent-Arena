@@ -9,15 +9,21 @@
 
 ### Adapters (`src/adapters/`)
 - **base.py** - BaseAdapter interface (ALL providers must implement)
-- **{provider}.py** - Generated adapters (from API docs via Playwright)
+- **llamaindex_adapter.py** - LlamaIndex integration (VectorStoreIndex)
+- **landingai_adapter.py** - LandingAI ADE integration (document preprocessing)
+- **reducto_adapter.py** - Reducto integration (RAG-optimized processing)
+- **__init__.py** - Exports all adapters
 
 ### Datasets (`src/datasets/`)
 - **loader.py** - Load datasets
 - **preprocessors/*.py** - Dataset-specific preprocessing
 
-### API Discovery (`src/api_discovery/`)
-- **doc_reader.py** - Playwright MCP → read docs → extract API structure
-- **adapter_generator.py** - Generate adapter code from API docs
+### API Discovery (Web Research Process)
+- Uses **web-research-gatherer subagent** (Task tool with general-purpose type)
+- Reads actual API documentation via Playwright MCP
+- Creates research documents in `local_docs/research_*_api_*.md`
+- No imagination - only actual API information
+- Manual adapter implementation based on research docs
 
 ## Interfaces
 
@@ -48,27 +54,79 @@ RAGResponse(answer, context, metadata, latency_ms, tokens_used)
 
 **Model**: gpt-4o-mini with structured outputs
 
+## Implemented Providers
+
+### LlamaIndex
+- **Type**: Full RAG framework
+- **Components**: VectorStoreIndex + OpenAI embeddings + OpenAI LLM
+- **Storage**: In-memory SimpleVectorStore
+- **Features**: Automatic chunking, semantic retrieval, response synthesis
+- **Tests**: 11 unit + 3 integration
+
+### LandingAI ADE (Agentic Document Extraction)
+- **Type**: Document preprocessing + RAG completion
+- **Components**: ADE API + external embeddings + external LLM
+- **Parsing**: 8 semantic chunk types (text, table, figure, logo, card, etc.)
+- **Features**: Grounding metadata, bounding boxes, multi-modal
+- **Storage**: In-memory vector store (NumPy)
+- **Tests**: 11 unit + 3 integration
+
+### Reducto
+- **Type**: Document preprocessing + RAG completion
+- **Components**: Reducto API + external embeddings + external LLM
+- **Parsing**: Variable-size semantic chunking
+- **Features**: Embedding-optimized output, AI enrichment, figure summarization
+- **Storage**: In-memory vector store (NumPy)
+- **Tests**: 11 unit + 4 integration
+
 ## Configuration Layers
 
 1. **Human** (`config/providers.yaml`): name + api_doc_url
-2. **AI** (`config/providers.generated.yaml`): full API spec from Playwright
-3. **Secrets** (`.env`): API keys
+2. **AI** (`config/providers.generated.yaml`): detailed API specs from research
+3. **Secrets** (`.env`): API keys (OPENAI_API_KEY, VISION_AGENT_API_KEY, REDUCTO_API_KEY)
 
-## Execution Flow
+## Execution Flow (Current Implementation)
 
 ```
-1. Load configs
-2. API Discovery: Playwright reads docs → generate adapters
-3. Load dataset → preprocess
-4. Ingest docs to all RAG providers → get index_ids
-5. Query all providers → collect predictions
-6. Batch score with GPT → get scores
-7. Aggregate → export results
+1. Load configs (providers.yaml + providers.generated.yaml)
+2. Initialize adapters (LlamaIndex, LandingAI, Reducto)
+3. Load dataset → preprocess (SQuAD 2.0 → DatasetSample format)
+4. Ingest docs to each provider → get index_ids
+5. Query all providers → collect RAGResponse objects
+6. Score with batch GPT or Ragas → get metrics
+7. Aggregate → compare performance
 ```
+
+**Status**: Steps 1-5 working, step 6-7 need testing/integration
 
 ## Tech Stack
 
-- Python 3.10+, Pydantic, AsyncIO
-- Playwright MCP (doc reading)
-- OpenAI (scoring)
-- pytest (testing)
+- **Python 3.11+**
+- **Core Libraries**:
+  - `llama-index-core`, `llama-index-embeddings-openai`, `llama-index-llms-openai`
+  - `openai` (embeddings + LLM + scoring)
+  - `requests` (HTTP API calls)
+  - `numpy` (vector operations)
+  - `ragas` (RAG evaluation metrics)
+  - `langchain-openai` (Ragas dependency)
+- **Testing**: `pytest` (50+ tests, unit + integration)
+- **Web Research**: Playwright MCP (via Task tool)
+- **Environment**: `python-dotenv` (API key management)
+
+## Test Coverage
+
+| Component | Unit Tests | Integration Tests | Status |
+|-----------|------------|-------------------|--------|
+| LlamaIndex Adapter | 11 | 3 | ✅ All passing |
+| LandingAI Adapter | 11 | 3 | ✅ All passing |
+| Reducto Adapter | 11 | 4 | ✅ All passing |
+| SQuAD Loader | 11 | 0 | ✅ All passing |
+| **Total** | **44** | **10** | **✅ 54/54** |
+
+## Development Principles
+
+1. **NO IMAGINATION**: All implementations based on actual API documentation
+2. **Web Research First**: Use subagent to read API docs, save to `local_docs/`
+3. **BaseAdapter Interface**: Standardized interface for all providers
+4. **Comprehensive Testing**: Unit (mocked) + integration (real API) tests
+5. **Cost-Conscious**: Use small test documents, mark integration tests with `@pytest.mark.integration`

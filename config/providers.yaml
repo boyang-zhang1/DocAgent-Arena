@@ -7,8 +7,11 @@ providers:
     api_doc_url: https://docs.llamaindex.ai/en/stable/api_reference/
 
   - name: landingai
-    api_doc_url: https://landing.ai/docs/api
+    api_doc_url: https://docs.landing.ai/ade/ade-quickstart
 
+  - name: reducto
+    api_doc_url: https://docs.reducto.ai/quickstart
+    
   # Add more providers here with just name and api_doc_url
   # - name: your_provider
   #   api_doc_url: https://your-provider.com/docs
