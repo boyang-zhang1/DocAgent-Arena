@@ -135,12 +135,21 @@ class RagasEvaluator:
             llm=self.evaluator_llm
         )
 
-        # Extract scores (Ragas returns dict-like object)
-        scores = {
-            metric_name: float(score)
-            for metric_name, score in result.items()
-            if metric_name != 'user_input'  # Filter out non-metric keys
-        }
+        # Extract scores from Ragas EvaluationResult
+        # The Ragas evaluate() function returns an EvaluationResult with .scores dict
+        # Convert to pandas and get mean scores
+        result_df = result.to_pandas()
+
+        # Get mean scores for each metric (excluding non-metric columns)
+        metric_columns = [col for col in result_df.columns
+                          if col not in ['user_input', 'reference', 'response', 'retrieved_contexts']]
+
+        scores = {}
+        for metric in metric_columns:
+            if metric in result_df.columns:
+                # Calculate mean score across all samples
+                mean_score = result_df[metric].mean()
+                scores[metric] = float(mean_score)
 
         return EvaluationResult(
             scores=scores,
