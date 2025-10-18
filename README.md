@@ -256,15 +256,6 @@ RAGRace/
 
 ## Key Features
 
-### ✅ Checkpoint 5: Full Orchestrator Pipeline
-
-- **One-Command Benchmarking**: `python scripts/run_benchmark.py --papers 10`
-- **Parallel Execution**: Run multiple providers simultaneously on each paper
-- **Resume Capability**: Interrupt and resume benchmarks without re-processing
-- **Auto Dataset Download**: Qasper PDFs and metadata downloaded on-demand
-- **Structured Results**: Per-paper, per-provider JSON with aggregated summary
-- **Cost Tracking**: Token usage and API costs per provider
-
 ### 🎯 Evaluation & Fairness
 
 - **Ragas Metrics**: Faithfulness, Factual Correctness, Context Recall
