@@ -5,22 +5,28 @@ benchmark:
   # Dataset configuration
   dataset:
     name: policyqa
-    split: dev
-    max_docs: 2
-    max_questions_per_doc: 3
+    split: train
+    max_docs: 10
+    max_questions_per_doc: 5
     filter_unanswerable: false
 
   # Provider selection
   # Add/remove providers from this list to change which ones are tested
   providers:
     - llamaindex
-    - landingai
+    # - landingai
     - reducto
 
   # Execution parameters
   execution:
-    max_provider_workers: 3   # Concurrent providers per document (3 = max parallelism)
-    max_doc_workers: 1        # Documents processed concurrently (1 = sequential)
+    # NEW: Parallel task execution (provider, document) combinations
+    max_total_workers: 9          # Total parallel (provider, doc) tasks (e.g., 3 docs × 3 providers = 9)
+    max_per_provider_workers: 3   # Max concurrent tasks per provider (rate limiting)
+    max_ragas_workers: 5          # Max concurrent RAGAS evaluations (OpenAI rate limit protection)
+
+    # DEPRECATED: Legacy settings (kept for backward compatibility)
+    max_provider_workers: 3       # Old: Concurrent providers per document (use max_per_provider_workers instead)
+    max_doc_workers: 1            # Old: Documents processed concurrently (now controlled by max_total_workers)
 
   # Timeout configuration (seconds)
   # Increase these if working with very large documents

@@ -126,11 +126,12 @@ class RagasEvaluator:
         # Create Ragas EvaluationDataset
         evaluation_dataset = EvaluationDataset.from_list(dataset_list)
 
-        # Run evaluation
+        # Run evaluation (disable progress bar to avoid clutter in parallel execution)
         result = evaluate(
             dataset=evaluation_dataset,
             metrics=self.metrics,
-            llm=self.evaluator_llm
+            llm=self.evaluator_llm,
+            show_progress=False
         )
 
         # Extract scores from Ragas EvaluationResult
