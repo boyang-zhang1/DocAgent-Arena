@@ -14,6 +14,7 @@ import {
 } from '@/lib/aggregateScores';
 import type { DocumentResult } from '@/types/api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import type { AxisDomain } from 'recharts/types/util/types';
 import { TrendingUp } from 'lucide-react';
 
 interface OverallResultsCardProps {
@@ -42,9 +43,9 @@ export function OverallResultsCard({ documents, providers }: OverallResultsCardP
                           selectedMetric.toLowerCase().includes('seconds');
 
   // Calculate appropriate Y-axis domain
-  const yAxisDomain = isDurationMetric
-    ? [0, 'auto' as const]  // Auto-scale for duration (can be 100s of seconds)
-    : [0, 1];                // Fixed 0-1 for score metrics
+  const yAxisDomain: AxisDomain = isDurationMetric
+    ? ([0, 'auto'] as const)  // Auto-scale for duration (can be 100s of seconds)
+    : ([0, 1] as const);      // Fixed 0-1 for score metrics
 
   return (
     <Card>
