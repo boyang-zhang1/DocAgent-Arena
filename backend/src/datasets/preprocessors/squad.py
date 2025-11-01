@@ -6,8 +6,12 @@ in standardized format for RAG evaluation.
 """
 
 import json
-from typing import Dict, Any
+import logging
+from typing import Dict, Any, Optional
+from pathlib import Path
 from .base import BasePreprocessor, DatasetSample, ProcessedDataset
+
+logger = logging.getLogger(__name__)
 
 
 class SquadPreprocessor(BasePreprocessor):
@@ -40,7 +44,8 @@ class SquadPreprocessor(BasePreprocessor):
 
     def process(
         self,
-        file_path: str,
+        file_path: Optional[str] = None,
+        storage_path: Optional[str] = None,
         filter_impossible: bool = True,
         max_samples: int = None
     ) -> ProcessedDataset:
@@ -48,85 +53,112 @@ class SquadPreprocessor(BasePreprocessor):
         Process SQuAD 2.0 JSON file.
 
         Args:
-            file_path: Path to SQuAD 2.0 JSON file
+            file_path: Path to local SQuAD 2.0 JSON file (for dev/testing)
+            storage_path: Path in Supabase Storage (e.g., 'squad2/train-v2.0.json')
+                          Takes precedence over file_path if both provided
             filter_impossible: If True, skip questions marked as impossible
             max_samples: Maximum number of samples to extract (None = all)
 
         Returns:
             ProcessedDataset with standardized samples
+
+        Raises:
+            ValueError: If neither file_path nor storage_path provided
         """
-        with open(file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        temp_file = None
 
-        samples = []
-        total_articles = len(data['data'])
-        total_paragraphs = 0
-        total_questions = 0
-        skipped_impossible = 0
+        # Determine which path to use
+        if storage_path:
+            # Use cloud storage
+            from api.services.storage import SupabaseStorageService
+            storage = SupabaseStorageService()
+            temp_file = storage.download_to_temp(storage_path)
+            file_path = str(temp_file)
+            logger.info(f"Loading SQuAD from cloud storage: {storage_path}")
+        elif file_path:
+            # Use local file
+            logger.info(f"Loading SQuAD from local file: {file_path}")
+        else:
+            raise ValueError("Must provide either file_path or storage_path")
 
-        for article in data['data']:
-            title = article['title']
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
 
-            for paragraph in article['paragraphs']:
-                context = paragraph['context']
-                total_paragraphs += 1
+            samples = []
+            total_articles = len(data['data'])
+            total_paragraphs = 0
+            total_questions = 0
+            skipped_impossible = 0
 
-                for qa in paragraph['qas']:
-                    total_questions += 1
+            for article in data['data']:
+                title = article['title']
 
-                    # Skip impossible questions if requested
-                    if filter_impossible and qa.get('is_impossible', False):
-                        skipped_impossible += 1
-                        continue
+                for paragraph in article['paragraphs']:
+                    context = paragraph['context']
+                    total_paragraphs += 1
 
-                    # Extract ground truth answer
-                    # For impossible questions, ground_truth is empty
-                    if qa.get('is_impossible', False):
-                        ground_truth = ""
-                    elif qa['answers']:
-                        # Use first answer as ground truth
-                        ground_truth = qa['answers'][0]['text']
-                    else:
-                        ground_truth = ""
+                    for qa in paragraph['qas']:
+                        total_questions += 1
 
-                    # Create standardized sample
-                    sample = DatasetSample(
-                        question=qa['question'],
-                        context=context,
-                        ground_truth=ground_truth,
-                        metadata={
-                            'question_id': qa['id'],
-                            'article_title': title,
-                            'is_impossible': qa.get('is_impossible', False),
-                            'all_answers': [ans['text'] for ans in qa.get('answers', [])],
-                            'answer_starts': [ans['answer_start'] for ans in qa.get('answers', [])]
-                        }
-                    )
-                    samples.append(sample)
+                        # Skip impossible questions if requested
+                        if filter_impossible and qa.get('is_impossible', False):
+                            skipped_impossible += 1
+                            continue
 
-                    # Check max_samples limit
+                        # Extract ground truth answer
+                        # For impossible questions, ground_truth is empty
+                        if qa.get('is_impossible', False):
+                            ground_truth = ""
+                        elif qa['answers']:
+                            # Use first answer as ground truth
+                            ground_truth = qa['answers'][0]['text']
+                        else:
+                            ground_truth = ""
+
+                        # Create standardized sample
+                        sample = DatasetSample(
+                            question=qa['question'],
+                            context=context,
+                            ground_truth=ground_truth,
+                            metadata={
+                                'question_id': qa['id'],
+                                'article_title': title,
+                                'is_impossible': qa.get('is_impossible', False),
+                                'all_answers': [ans['text'] for ans in qa.get('answers', [])],
+                                'answer_starts': [ans['answer_start'] for ans in qa.get('answers', [])]
+                            }
+                        )
+                        samples.append(sample)
+
+                        # Check max_samples limit
+                        if max_samples and len(samples) >= max_samples:
+                            break
+
                     if max_samples and len(samples) >= max_samples:
                         break
 
                 if max_samples and len(samples) >= max_samples:
                     break
 
-            if max_samples and len(samples) >= max_samples:
-                break
+            # Create processed dataset with metadata
+            dataset_metadata = {
+                'version': data.get('version', 'unknown'),
+                'total_articles': total_articles,
+                'total_paragraphs': total_paragraphs,
+                'total_questions': total_questions,
+                'skipped_impossible': skipped_impossible,
+                'filter_impossible': filter_impossible,
+                'samples_extracted': len(samples)
+            }
 
-        # Create processed dataset with metadata
-        dataset_metadata = {
-            'version': data.get('version', 'unknown'),
-            'total_articles': total_articles,
-            'total_paragraphs': total_paragraphs,
-            'total_questions': total_questions,
-            'skipped_impossible': skipped_impossible,
-            'filter_impossible': filter_impossible,
-            'samples_extracted': len(samples)
-        }
-
-        return ProcessedDataset(
-            samples=samples,
-            dataset_name='SQuAD2',
-            metadata=dataset_metadata
-        )
+            return ProcessedDataset(
+                samples=samples,
+                dataset_name='SQuAD2',
+                metadata=dataset_metadata
+            )
+        finally:
+            # Clean up temp file if we downloaded from storage
+            if temp_file and Path(temp_file).exists():
+                Path(temp_file).unlink()
+                logger.debug(f"Cleaned up temp file: {temp_file}")
