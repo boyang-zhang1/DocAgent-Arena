@@ -33,6 +33,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8000/api/health || exit 1
 
-# Run database migrations and start the server
+# Start the server (database schema already exists from development setup)
 # Railway provides PORT environment variable
-CMD prisma migrate deploy && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}

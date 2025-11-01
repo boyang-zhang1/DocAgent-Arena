@@ -15,5 +15,5 @@ restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
 
 # Start command (Railway will inject PORT env var)
-# Note: Docker WORKDIR is set to /app in Dockerfile
-startCommand = "prisma migrate deploy && uvicorn main:app --host 0.0.0.0 --port $PORT"
+# Database schema already exists, no migrations needed
+startCommand = "uvicorn main:app --host 0.0.0.0 --port $PORT"
