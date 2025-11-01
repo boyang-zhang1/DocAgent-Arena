@@ -1,0 +1,44 @@
+# RAGRace Benchmark Configuration - Test Run (1 doc, 2 questions)
+
+benchmark:
+  # Dataset configuration
+  dataset:
+    name: qasper
+    split: train
+    max_docs: 1                        # Just 1 document for testing
+    max_questions_per_doc: 2           # Just 2 questions for testing
+    filter_unanswerable: true
+
+  # Provider selection (just llamaindex for testing)
+  providers:
+    - llamaindex
+
+  # Provider-specific configs
+  provider_configs: {}  # Use defaults
+
+  # Execution parameters
+  execution:
+    max_total_workers: 1
+    max_per_provider_workers: 1
+    max_ragas_workers: 1
+
+  # Timeout configuration (seconds)
+  timeouts:
+    provider_init: 30
+    document_ingest: 300
+    query: 60
+    evaluation: 120
+
+  # Output configuration
+  output:
+    results_dir: data/results
+    save_intermediate: true
+    resume_enabled: false
+
+  # Evaluation configuration
+  evaluation:
+    model: gpt-4o-mini
+    metrics:
+      - faithfulness
+      - factual_correctness
+      - context_recall

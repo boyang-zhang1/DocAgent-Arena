@@ -25,6 +25,7 @@ from src.core.ragas_evaluator import RagasEvaluator
 from src.core.document_processor import DocumentProcessor
 from src.core.provider_executor import ProviderExecutor
 from src.core.result_saver import ResultSaver
+from src.core.db_writer import DbWriter
 
 
 class Orchestrator:
@@ -53,6 +54,10 @@ class Orchestrator:
         self.result_saver = ResultSaver(
             output_dir=Path(self.output_config['results_dir'])
         )
+
+        # Don't initialize DB writer here - will be created in run_benchmark()
+        # when we're in the correct thread context
+        self.db_writer = None
 
         # Save config snapshot
         self.result_saver.save_config(self.config)
@@ -134,186 +139,247 @@ class Orchestrator:
         print(f"Results: {self.result_saver.run_dir}")
         print("="*80)
 
-        # Step 1: Load dataset
-        print(f"\n📥 Loading dataset...")
-        docs, questions_by_doc = self._load_dataset()
+        try:
 
-        total_questions = sum(len(qs) for qs in questions_by_doc.values())
-        print(f"   ✓ Loaded {len(docs)} docs, {total_questions} questions")
+            # Initialize database writer here (in thread context, not in __init__)
+            self.db_writer = DbWriter()
 
-        # Step 2: Initialize adapters
-        print(f"\n📦 Initializing {len(self.provider_names)} providers...")
-        adapters = AdapterFactory.create_all_adapters(
-            provider_names=self.provider_names,
-            provider_configs=self.provider_configs
-        )
-        print(f"   ✓ All providers initialized and healthy")
+            # Step 1: Load dataset
+            print(f"\n📥 Loading dataset...")
+            docs, questions_by_doc = self._load_dataset()
 
-        # Step 3: Initialize evaluator
-        print(f"\n📊 Initializing Ragas evaluator...")
-        evaluator = RagasEvaluator(config=self.eval_config)
-        print(f"   ✓ Ragas evaluator ready")
+            total_questions = sum(len(qs) for qs in questions_by_doc.values())
+            print(f"   ✓ Loaded {len(docs)} docs, {total_questions} questions")
 
-        # Step 4: Create semaphores for rate limiting
-        # Per-provider semaphores (limit concurrent tasks per provider)
-        max_per_provider = self.execution_config.get('max_per_provider_workers', 3)
-        provider_semaphores = {
-            provider_name: threading.Semaphore(max_per_provider)
-            for provider_name in self.provider_names
-        }
-
-        # RAGAS evaluation semaphore (limit concurrent evaluations)
-        max_ragas = self.execution_config.get('max_ragas_workers', 5)
-        ragas_semaphore = threading.Semaphore(max_ragas)
-
-        print(f"\n🔧 Parallelization settings:")
-        print(f"   Max total workers: {self.execution_config.get('max_total_workers', 9)}")
-        print(f"   Max per-provider workers: {max_per_provider}")
-        print(f"   Max RAGAS workers: {max_ragas}")
-
-        # Step 5: Generate task combinations
-        print(f"\n🔄 Generating task combinations...")
-        tasks = self._create_task_combinations(docs, questions_by_doc, adapters)
-
-        # Filter tasks based on resume capability
-        tasks_to_run = []
-        tasks_skipped = 0
-        for provider_name, adapter, doc, questions in tasks:
-            if self._should_skip_task(provider_name, doc.doc_id):
-                tasks_skipped += 1
-                print(f"   ⏭️  Skipping {provider_name} + {doc.doc_id} (already completed)")
-            else:
-                tasks_to_run.append((provider_name, adapter, doc, questions))
-
-        total_tasks = len(tasks)
-        tasks_to_execute = len(tasks_to_run)
-
-        print(f"   ✓ Total task combinations: {total_tasks}")
-        print(f"   ✓ Tasks to execute: {tasks_to_execute} ({total_tasks - tasks_to_execute} skipped)")
-        print(f"   ✓ Expected parallelism: {len(docs)} docs × {len(self.provider_names)} providers")
-
-        # Step 6: Execute tasks in parallel
-        print(f"\n🚀 Executing {tasks_to_execute} tasks in parallel...")
-        print(f"{'='*80}")
-
-        # Create provider executor
-        provider_executor = ProviderExecutor(evaluator=evaluator)
-
-        # Track results per document
-        doc_results_map = defaultdict(dict)  # {doc_id: {provider_name: ProviderResult}}
-
-        # Execute tasks with thread pool
-        max_total_workers = self.execution_config.get('max_total_workers', 9)
-        with ThreadPoolExecutor(max_workers=max_total_workers) as pool:
-            # Submit all tasks
-            future_to_task = {}
-            for provider_name, adapter, doc, questions in tasks_to_run:
-                future = pool.submit(
-                    provider_executor.execute,
-                    provider_name=provider_name,
-                    adapter=adapter,
-                    doc=doc,
-                    questions=questions,
-                    provider_semaphore=provider_semaphores[provider_name],
-                    ragas_semaphore=ragas_semaphore
+            # Step 2: Initialize adapters
+            print(f"\n📦 Initializing {len(self.provider_names)} providers...")
+            adapters = AdapterFactory.create_all_adapters(
+                provider_names=self.provider_names,
+                provider_configs=self.provider_configs
+            )
+            print(f"   ✓ All providers initialized and healthy")
+    
+            # Step 3: Initialize evaluator
+            print(f"\n📊 Initializing Ragas evaluator...")
+            evaluator = RagasEvaluator(config=self.eval_config)
+            print(f"   ✓ Ragas evaluator ready")
+    
+            # Step 3.5: Create BenchmarkRun record in database
+            if self.db_writer.connected:
+                print(f"\n💾 Creating benchmark run in database...")
+                db_success = self.db_writer.create_benchmark_run(
+                    run_id=self.result_saver.run_id,
+                    config=self.config,
+                    dataset_name=self.dataset_config['name'],
+                    dataset_split=self.dataset_config.get('split', 'train'),
+                    providers=self.provider_names,
+                    num_docs=len(docs),
+                    num_questions_total=total_questions
                 )
-                future_to_task[future] = (provider_name, doc.doc_id, doc.doc_title)
-                print(f"   ✓ Submitted: {provider_name} + {doc.doc_id[:40]}")
-
-            # Collect results as they complete
-            print(f"\n⏳ Waiting for {tasks_to_execute} tasks to complete...")
+                if db_success:
+                    print(f"   ✓ Database record created: {self.result_saver.run_id}")
+                else:
+                    print(f"   ⚠️  Database write failed (continuing with file-based persistence)")
+    
+    
+            # Step 4: Create semaphores for rate limiting
+            # Per-provider semaphores (limit concurrent tasks per provider)
+            max_per_provider = self.execution_config.get('max_per_provider_workers', 3)
+            provider_semaphores = {
+                provider_name: threading.Semaphore(max_per_provider)
+                for provider_name in self.provider_names
+            }
+    
+            # RAGAS evaluation semaphore (limit concurrent evaluations)
+            max_ragas = self.execution_config.get('max_ragas_workers', 5)
+            ragas_semaphore = threading.Semaphore(max_ragas)
+    
+            print(f"\n🔧 Parallelization settings:")
+            print(f"   Max total workers: {self.execution_config.get('max_total_workers', 9)}")
+            print(f"   Max per-provider workers: {max_per_provider}")
+            print(f"   Max RAGAS workers: {max_ragas}")
+    
+            # Step 5: Generate task combinations
+            print(f"\n🔄 Generating task combinations...")
+            tasks = self._create_task_combinations(docs, questions_by_doc, adapters)
+    
+            # Filter tasks based on resume capability
+            tasks_to_run = []
+            tasks_skipped = 0
+            for provider_name, adapter, doc, questions in tasks:
+                if self._should_skip_task(provider_name, doc.doc_id):
+                    tasks_skipped += 1
+                    print(f"   ⏭️  Skipping {provider_name} + {doc.doc_id} (already completed)")
+                else:
+                    tasks_to_run.append((provider_name, adapter, doc, questions))
+    
+            total_tasks = len(tasks)
+            tasks_to_execute = len(tasks_to_run)
+    
+            print(f"   ✓ Total task combinations: {total_tasks}")
+            print(f"   ✓ Tasks to execute: {tasks_to_execute} ({total_tasks - tasks_to_execute} skipped)")
+            print(f"   ✓ Expected parallelism: {len(docs)} docs × {len(self.provider_names)} providers")
+    
+            # Step 6: Execute tasks in parallel
+            print(f"\n🚀 Executing {tasks_to_execute} tasks in parallel...")
             print(f"{'='*80}")
-
-            completed_count = 0
-            for future in as_completed(future_to_task):
-                provider_name, doc_id, doc_title = future_to_task[future]
-
-                try:
-                    result: ProviderResult = future.result()
-
-                    # Store result
-                    doc_results_map[doc_id][provider_name] = result
-                    completed_count += 1
-
-                    # Log completion
-                    status_icon = "✅" if result.status == "success" else "❌"
-                    progress = f"[{completed_count}/{tasks_to_execute}]"
-                    print(f"\n{status_icon} {progress} {provider_name} + {doc_id[:40]}")
-                    print(f"   Duration: {result.duration_seconds:.1f}s")
-
-                    if result.status == "success":
-                        scores_str = ", ".join([f"{k}={v:.3f}" for k, v in result.aggregated_scores.items() if k != 'duration_seconds'])
-                        print(f"   Scores: {scores_str}")
-                    else:
-                        print(f"   Error: {result.error}")
-
-                    # Save provider result incrementally
-                    self.result_saver.save_provider_result(result)
-
-                except Exception as e:
-                    # Handle thread execution errors
-                    print(f"\n❌ [{completed_count + 1}/{tasks_to_execute}] {provider_name} + {doc_id} thread failed: {e}")
-                    completed_count += 1
-
-        # Step 7: Aggregate results per document
-        print(f"\n📊 Aggregating results per document...")
-        doc_results = []
-
-        for doc in docs:
-            if doc.doc_id in doc_results_map:
-                provider_results = doc_results_map[doc.doc_id]
-
-                # Create DocumentResult
-                doc_result = DocumentResult(
-                    doc_id=doc.doc_id,
-                    doc_title=doc.doc_title,
-                    num_questions=len(questions_by_doc[doc.doc_id]),
-                    timestamp=datetime.now().isoformat(),
-                    providers=provider_results
+    
+            # Create provider executor
+            provider_executor = ProviderExecutor(evaluator=evaluator)
+    
+            # Track results per document
+            doc_results_map = defaultdict(dict)  # {doc_id: {provider_name: ProviderResult}}
+    
+            # Execute tasks with thread pool
+            max_total_workers = self.execution_config.get('max_total_workers', 9)
+            with ThreadPoolExecutor(max_workers=max_total_workers) as pool:
+                # Submit all tasks
+                future_to_task = {}
+                for provider_name, adapter, doc, questions in tasks_to_run:
+                    future = pool.submit(
+                        provider_executor.execute,
+                        provider_name=provider_name,
+                        adapter=adapter,
+                        doc=doc,
+                        questions=questions,
+                        provider_semaphore=provider_semaphores[provider_name],
+                        ragas_semaphore=ragas_semaphore
+                    )
+                    future_to_task[future] = (provider_name, doc.doc_id, doc.doc_title)
+                    print(f"   ✓ Submitted: {provider_name} + {doc.doc_id[:40]}")
+    
+                # Collect results as they complete
+                print(f"\n⏳ Waiting for {tasks_to_execute} tasks to complete...")
+                print(f"{'='*80}")
+    
+                completed_count = 0
+                for future in as_completed(future_to_task):
+                    provider_name, doc_id, doc_title = future_to_task[future]
+    
+                    try:
+                        result: ProviderResult = future.result()
+    
+                        # Store result
+                        doc_results_map[doc_id][provider_name] = result
+                        completed_count += 1
+    
+                        # Log completion
+                        status_icon = "✅" if result.status == "success" else "❌"
+                        progress = f"[{completed_count}/{tasks_to_execute}]"
+                        print(f"\n{status_icon} {progress} {provider_name} + {doc_id[:40]}")
+                        print(f"   Duration: {result.duration_seconds:.1f}s")
+    
+                        if result.status == "success":
+                            scores_str = ", ".join([f"{k}={v:.3f}" for k, v in result.aggregated_scores.items() if k != 'duration_seconds'])
+                            print(f"   Scores: {scores_str}")
+                        else:
+                            print(f"   Error: {result.error}")
+    
+                        # Save provider result incrementally
+                        self.result_saver.save_provider_result(result)
+    
+                        # Save to database (try, don't fail if DB write fails)
+                        if self.db_writer.connected:
+                            # Get document and questions for this result
+                            doc_data = next((d for d in docs if d.doc_id == doc_id), None)
+                            if doc_data:
+                                questions_data = questions_by_doc[doc_id]
+                                self.db_writer.save_provider_result(
+                                    run_id=self.result_saver.run_id,
+                                    doc_data=doc_data,
+                                    questions_data=questions_data,
+                                    provider_result=result
+                                )
+    
+    
+                    except Exception as e:
+                        # Handle thread execution errors
+                        print(f"\n❌ [{completed_count + 1}/{tasks_to_execute}] {provider_name} + {doc_id} thread failed: {e}")
+                        completed_count += 1
+    
+            # Step 7: Aggregate results per document
+            print(f"\n📊 Aggregating results per document...")
+            doc_results = []
+    
+            for doc in docs:
+                if doc.doc_id in doc_results_map:
+                    provider_results = doc_results_map[doc.doc_id]
+    
+                    # Create DocumentResult
+                    doc_result = DocumentResult(
+                        doc_id=doc.doc_id,
+                        doc_title=doc.doc_title,
+                        num_questions=len(questions_by_doc[doc.doc_id]),
+                        timestamp=datetime.now().isoformat(),
+                        providers=provider_results
+                    )
+    
+                    # Determine winner (aggregate scores)
+                    doc_result.winner = self._aggregate_provider_scores(provider_results)
+    
+                    # Save aggregated document result
+                    self.result_saver.save_document_aggregated(doc_result)
+    
+                    doc_results.append(doc_result)
+    
+                    print(f"   ✓ Aggregated results for {doc.doc_id}")
+                else:
+                    print(f"   ⚠️  No results for {doc.doc_id} (all tasks skipped or failed)")
+    
+            print(f"   ✓ Aggregated {len(doc_results)} documents")
+    
+            # Step 5: Generate run summary
+            print(f"\n📊 Generating run summary...")
+            end_time = time.time()
+            duration = end_time - start_time
+    
+            # Determine overall winner (most metrics won across all docs)
+            overall_winner = self._determine_overall_winner(doc_results)
+    
+            summary = RunSummary(
+                run_id=self.result_saver.run_id,
+                config=self.config,
+                num_docs=len(docs),
+                num_questions_total=total_questions,
+                providers=self.provider_names,
+                results=doc_results,
+                overall_winner=overall_winner,
+                duration_seconds=duration,
+                timestamp_start=timestamp_start,
+                timestamp_end=datetime.now().isoformat()
+            )
+    
+            # Save summary
+            self.result_saver.save_run_summary(summary)
+    
+            # Mark benchmark as completed in database
+            if self.db_writer.connected:
+                self.db_writer.complete_benchmark_run(
+                    run_id=self.result_saver.run_id,
+                    duration_seconds=duration,
+                    num_docs=len(docs),
+                    num_questions_total=total_questions
                 )
 
-                # Determine winner (aggregate scores)
-                doc_result.winner = self._aggregate_provider_scores(provider_results)
+            # Print final results
+            self._print_summary(summary)
 
-                # Save aggregated document result
-                self.result_saver.save_document_aggregated(doc_result)
+            return summary
 
-                doc_results.append(doc_result)
+        except Exception as e:
+            # Handle benchmark failure
+            error_msg = f"Benchmark execution failed: {str(e)}"
+            print(f"\n❌ {error_msg}")
 
-                print(f"   ✓ Aggregated results for {doc.doc_id}")
-            else:
-                print(f"   ⚠️  No results for {doc.doc_id} (all tasks skipped or failed)")
+            # Mark as failed in database
+            if self.db_writer.connected:
+                self.db_writer.fail_benchmark_run(
+                    run_id=self.result_saver.run_id,
+                    error_message=error_msg
+                )
 
-        print(f"   ✓ Aggregated {len(doc_results)} documents")
-
-        # Step 5: Generate run summary
-        print(f"\n📊 Generating run summary...")
-        end_time = time.time()
-        duration = end_time - start_time
-
-        # Determine overall winner (most metrics won across all docs)
-        overall_winner = self._determine_overall_winner(doc_results)
-
-        summary = RunSummary(
-            run_id=self.result_saver.run_id,
-            config=self.config,
-            num_docs=len(docs),
-            num_questions_total=total_questions,
-            providers=self.provider_names,
-            results=doc_results,
-            overall_winner=overall_winner,
-            duration_seconds=duration,
-            timestamp_start=timestamp_start,
-            timestamp_end=datetime.now().isoformat()
-        )
-
-        # Save summary
-        self.result_saver.save_run_summary(summary)
-
-        # Print final results
-        self._print_summary(summary)
-
-        return summary
+            # Re-raise exception
+            raise
 
     def _load_dataset(self) -> Tuple[List[DocumentData], Dict[str, List[QuestionData]]]:
         """
