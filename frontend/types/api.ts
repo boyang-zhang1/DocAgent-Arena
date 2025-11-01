@@ -77,3 +77,22 @@ export interface ResultsListResponse {
 export interface ApiError {
   detail: string;
 }
+
+// Benchmark Creation Request
+export interface BenchmarkRequest {
+  dataset: string;
+  split: string;
+  providers: string[];
+  max_docs: number | null;
+  max_questions_per_doc: number | null;
+  filter_unanswerable: boolean;
+  api_keys?: Record<string, string>;  // Optional: provider API keys (openai, llamaindex, landingai, reducto)
+}
+
+// Benchmark Creation Response
+export interface BenchmarkResponse {
+  run_id: string;
+  status: string;
+  message: string;
+  duration_seconds: number | null;
+}

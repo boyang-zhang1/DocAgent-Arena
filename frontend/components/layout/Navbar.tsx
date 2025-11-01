@@ -19,6 +19,12 @@ export function Navbar() {
               Results
             </Link>
             <Link
+              href="/dashboard"
+              className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+            >
+              Run Benchmark
+            </Link>
+            <Link
               href="/datasets"
               className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
             >

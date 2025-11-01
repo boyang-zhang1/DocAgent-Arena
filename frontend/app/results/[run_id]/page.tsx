@@ -143,7 +143,23 @@ async function RunDetailContent({ runId }: { runId: string }) {
 function RunDetailLoading() {
   return (
     <div className="space-y-6">
+      {/* Back Link Skeleton */}
       <Skeleton className="h-8 w-32" />
+
+      {/* Loading Message - Prominent */}
+      <div className="text-center py-12">
+        <div className="inline-flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          <div>
+            <h2 className="text-2xl font-bold mb-2">Loading Results</h2>
+            <p className="text-muted-foreground">
+              Fetching benchmark data from database...
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Skeleton Content */}
       <div className="space-y-2">
         <Skeleton className="h-10 w-96" />
         <Skeleton className="h-5 w-64" />

@@ -7,6 +7,8 @@ import type {
   RunDetail,
   DatasetInfo,
   ResultsListResponse,
+  BenchmarkRequest,
+  BenchmarkResponse,
 } from '@/types/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -20,19 +22,40 @@ class ApiClient {
 
   private async fetchWithError<T>(url: string, options?: RequestInit): Promise<T> {
     try {
+      // Extract headers from options to avoid overwriting
+      const { headers: optionHeaders, ...restOptions } = options || {};
+
       const response = await fetch(`${this.baseUrl}${url}`, {
+        ...restOptions,
         headers: {
           'Content-Type': 'application/json',
-          ...options?.headers,
+          ...optionHeaders,
         },
-        ...options,
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({
-          detail: `HTTP ${response.status}: ${response.statusText}`,
-        }));
-        throw new Error(error.detail || `Request failed with status ${response.status}`);
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+
+        try {
+          const errorData = await response.json();
+
+          // Handle FastAPI validation errors (422)
+          if (errorData.detail) {
+            if (Array.isArray(errorData.detail)) {
+              // Pydantic validation errors: [{loc, msg, type}]
+              errorMessage = errorData.detail
+                .map((e: any) => `${e.loc.join('.')}: ${e.msg}`)
+                .join('; ');
+            } else {
+              // String detail (403, 500, etc.)
+              errorMessage = errorData.detail;
+            }
+          }
+        } catch {
+          // If JSON parsing fails, use status text
+        }
+
+        throw new Error(errorMessage);
       }
 
       return await response.json();
@@ -82,6 +105,34 @@ class ApiClient {
    */
   async healthCheck(): Promise<{ status: string; service: string }> {
     return this.fetchWithError('/api/health');
+  }
+
+  /**
+   * Create and execute a new benchmark run
+   *
+   * @param request Benchmark configuration (includes api_keys for providers)
+   * @param apiKey Optional X-API-Key header for user authentication (deprecated - use api_keys in request instead)
+   * @returns Benchmark response with run_id and status
+   *
+   * Note: This endpoint runs synchronously and may take 1-5+ minutes.
+   * Use small values for max_docs/max_questions_per_doc for testing.
+   */
+  async createBenchmark(
+    request: BenchmarkRequest,
+    apiKey?: string
+  ): Promise<BenchmarkResponse> {
+    const headers: Record<string, string> = {};
+
+    // Only include X-API-Key header if provided (for backward compatibility)
+    if (apiKey && apiKey.trim()) {
+      headers['X-API-Key'] = apiKey;
+    }
+
+    return this.fetchWithError<BenchmarkResponse>('/api/v1/benchmarks', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(request),
+    });
   }
 }
 
