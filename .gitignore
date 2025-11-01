@@ -26,7 +26,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+backend/lib/
+backend/lib64/
 lib64/
 parts/
 sdist/
@@ -35,6 +36,9 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# But keep frontend lib directory
+!frontend/lib/
 
 # Virtual environments
 venv/

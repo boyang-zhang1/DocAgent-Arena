@@ -4,7 +4,7 @@
 
 RAGRace provides an automated benchmark framework to evaluate RAG providers on academic documents, Wikipedia articles, and more. All providers are tested on identical documents with standardized evaluation metrics (Ragas) for fair comparison.
 
-**Current Status**: Checkpoint 5 Complete - Full orchestrator pipeline with 3 RAG providers, automated benchmarking on Qasper (research papers), PolicyQA (privacy policies), and SQuAD 2.0 datasets.
+**Current Status**: Monorepo with FastAPI + Prisma ORM + Next.js frontend. Read-only API and web interface deployed. Full orchestrator pipeline with 3 RAG providers, benchmarking on Qasper (research papers), PolicyQA (privacy policies), and SQuAD 2.0 datasets. Results stored in Supabase PostgreSQL.
 
 ## Integrated Providers
 
@@ -13,6 +13,55 @@ RAGRace provides an automated benchmark framework to evaluate RAG providers on a
 | **[LlamaIndex](docs/ADAPTERS.md#llamaindex)** | Full RAG Framework | VectorStoreIndex, built-in embeddings | ✅ Tested |
 | **[LandingAI](docs/ADAPTERS.md#landingai-ade-agentic-document-extraction)** | Doc Preprocessing | 8 chunk types, grounding metadata | ✅ Tested |
 | **[Reducto](docs/ADAPTERS.md#reducto)** | Doc Preprocessing | Embedding-optimized, AI enrichment | ✅ Tested |
+
+## Web API
+
+RAGRace provides a FastAPI-based REST API for browsing benchmark results:
+
+```bash
+# Start the API server
+cd backend
+uvicorn main:app --reload
+
+# Browse results
+curl http://localhost:8000/api/v1/results
+curl http://localhost:8000/api/v1/results/{run_id}
+curl http://localhost:8000/api/v1/datasets
+
+# API documentation
+open http://localhost:8000/docs
+```
+
+**Endpoints:**
+- `GET /api/v1/results` - List all completed benchmark runs (paginated, filterable)
+- `GET /api/v1/results/{run_id}` - Get full run details with nested provider results
+- `GET /api/v1/datasets` - List available datasets
+
+All results are stored in Supabase PostgreSQL and accessed via Prisma ORM.
+
+## Web Frontend
+
+RAGRace includes a Next.js web interface for browsing benchmark results:
+
+```bash
+# Start the frontend (requires backend API running)
+cd frontend
+npm install
+npm run dev
+
+# Open browser
+open http://localhost:3000
+```
+
+**Features:**
+- 📊 Browse all benchmark runs with sortable table
+- 🔍 Detailed run view with provider comparison
+- 📝 Expandable question-by-question results
+- 🎯 Ground truth vs provider answers
+- 📈 Evaluation scores and latency metrics
+- 🎨 Responsive design with shadcn/ui components
+
+See [frontend/README.md](frontend/README.md) for complete documentation.
 
 ## Quick Start
 
@@ -23,20 +72,22 @@ RAGRace provides an automated benchmark framework to evaluate RAG providers on a
 git clone https://github.com/yourusername/RAGRace.git
 cd RAGRace
 
-# Install dependencies
+# Install backend dependencies
+cd backend
 pip install -r requirements.txt
 ```
 
 ### 2. API Keys Setup
 
 ```bash
-# Copy environment template
-cp .env.example .env
+# Copy environment template (in backend/)
+cp backend/.env.example backend/.env
 
-# Edit .env and add your API keys:
+# Edit backend/.env and add your API keys:
 # OPENAI_API_KEY=sk-...                    # Required for all providers
 # VISION_AGENT_API_KEY=va-...              # For LandingAI (optional)
 # REDUCTO_API_KEY=red-...                   # For Reducto (optional)
+# DATABASE_URL=postgresql://...             # Supabase connection (for API)
 ```
 
 **Note**: You only need OpenAI API key to run LlamaIndex. Add other keys only if testing those providers.
@@ -45,13 +96,13 @@ cp .env.example .env
 
 ```bash
 # Quick test: 1 document, 1 question per document (~2 minutes, ~$0.20)
-python scripts/run_benchmark.py --docs 1 --questions 1
+python backend/scripts/run_benchmark.py --docs 1 --questions 1
 
 # Small benchmark: 2 documents, 3 questions each (~5 minutes, ~$1.00)
-python scripts/run_benchmark.py --docs 2 --questions 3
+python backend/scripts/run_benchmark.py --docs 2 --questions 3
 
 # Test specific providers only
-python scripts/run_benchmark.py --docs 1 --questions 1 --providers llamaindex
+python backend/scripts/run_benchmark.py --docs 1 --questions 1 --providers llamaindex
 ```
 
 **What happens when you run this?**
@@ -229,42 +280,57 @@ pytest tests/ -v -m integration -s
 ## Project Structure
 
 ```
-RAGRace/
-├── scripts/
-│   └── run_benchmark.py      # ⭐ CLI entry point for benchmarks
-├── config/
-│   ├── benchmark_qasper.yaml      # Qasper benchmark config
-│   ├── benchmark_policyqa.yaml    # PolicyQA benchmark config
-│   ├── providers.yaml             # Provider registry (human-maintained)
-│   └── providers.generated.yaml   # Provider configs (AI-generated)
-├── src/
-│   ├── core/                 # Core pipeline components
-│   │   ├── orchestrator.py   # Main benchmark coordinator
-│   │   ├── adapter_factory.py    # Provider instantiation
-│   │   ├── provider_executor.py  # Parallel execution
-│   │   ├── document_processor.py # Document processing
-│   │   ├── result_saver.py       # Results management
-│   │   ├── ragas_evaluator.py    # Ragas metrics
-│   │   └── schemas.py            # Data structures
-│   ├── adapters/             # RAG provider adapters
-│   │   ├── base.py           # BaseAdapter interface
-│   │   ├── llamaindex_adapter.py
-│   │   ├── landingai_adapter.py
-│   │   └── reducto_adapter.py
-│   └── datasets/             # Dataset loaders
-│       ├── loader.py         # Main loader
-│       └── preprocessors/    # Dataset-specific preprocessing
-├── tests/                    # Unit and integration tests
-├── data/
+RAGRace/                      # Monorepo root
+├── backend/                  # Python backend (benchmark engine + API)
+│   ├── main.py               # ⭐ FastAPI app entry point
+│   ├── api/                  # REST API (read-only, public)
+│   │   ├── db.py             # Prisma client singleton
+│   │   ├── models/           # Pydantic response models
+│   │   └── routers/          # API endpoints
+│   │       └── results.py    # GET /results, /results/{run_id}, /datasets
+│   ├── prisma/               # Prisma ORM (Supabase PostgreSQL)
+│   │   ├── schema.prisma     # Database schema (7 models)
+│   │   └── migrations/       # SQL migrations
+│   ├── scripts/
+│   │   └── run_benchmark.py  # ⭐ CLI entry point for benchmarks
+│   ├── config/
+│   │   ├── benchmark_qasper.yaml    # Qasper benchmark config
+│   │   ├── benchmark_policyqa.yaml  # PolicyQA benchmark config
+│   │   ├── providers.yaml           # Provider registry
+│   │   └── providers.generated.yaml # Provider configs (AI-generated)
+│   ├── src/                  # Core pipeline components
+│   │   ├── core/
+│   │   │   ├── orchestrator.py      # Main benchmark coordinator
+│   │   │   ├── adapter_factory.py   # Provider instantiation
+│   │   │   ├── provider_executor.py # Parallel execution
+│   │   │   ├── document_processor.py # Document processing
+│   │   │   ├── result_saver.py      # Results management
+│   │   │   ├── ragas_evaluator.py   # Ragas metrics
+│   │   │   └── schemas.py           # Data structures
+│   │   ├── adapters/         # RAG provider adapters
+│   │   │   ├── base.py       # BaseAdapter interface
+│   │   │   ├── llamaindex_adapter.py
+│   │   │   ├── landingai_adapter.py
+│   │   │   └── reducto_adapter.py
+│   │   └── datasets/         # Dataset loaders
+│   │       ├── loader.py     # Main loader
+│   │       └── preprocessors/ # Dataset-specific preprocessing
+│   ├── tests/                # Unit and integration tests
+│   └── requirements.txt      # Python dependencies
+├── frontend/                 # Next.js 16 frontend (TypeScript, Tailwind, shadcn/ui)
+├── data/                     # Shared data (symlinked in backend/)
 │   ├── datasets/             # Downloaded datasets (auto-cached)
 │   │   ├── Qasper/           # Research papers (arxiv PDFs)
 │   │   ├── PolicyQA/         # Privacy policies (HTML→PDF)
 │   │   └── SQuAD2/           # Wikipedia articles
 │   └── results/              # Benchmark results (timestamped)
-└── docs/                     # Documentation
-    ├── ARCHITECTURE.md       # System architecture
-    ├── ADAPTERS.md           # Adapter specifications
-    └── DEVELOPMENT.md        # Development guide
+├── docs/                     # Documentation
+│   ├── ARCHITECTURE.md       # System architecture
+│   ├── ADAPTERS.md           # Adapter specifications
+│   └── DEVELOPMENT.md        # Development guide
+└── local_docs/               # AI working docs (session state)
+    ├── CLOUD_DEPLOYMENT_PLAN.md    # Deployment roadmap
+    └── IMPLEMENTATION_STEPS.md     # Implementation progress
 ```
 
 ## Documentation
