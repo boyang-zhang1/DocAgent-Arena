@@ -1,5 +1,50 @@
 # RAGRace Architecture
 
+## System Overview
+
+RAGRace consists of three main layers:
+1. **Backend (Python)** - Benchmark orchestration engine + FastAPI REST API
+2. **Frontend (TypeScript/React)** - Next.js web interface for browsing results
+3. **Database (PostgreSQL)** - Supabase with Prisma ORM for persistent storage
+
+## Web Stack
+
+### Backend API (`backend/api/`, `backend/main.py`)
+- **Framework**: FastAPI with async support
+- **ORM**: Prisma Client Python (asyncio interface)
+- **Database**: Supabase PostgreSQL
+- **Endpoints** (Read-Only):
+  - `GET /api/v1/results` - List benchmark runs (paginated, filterable)
+  - `GET /api/v1/results/{run_id}` - Full run details with nested data
+  - `GET /api/v1/datasets` - Available datasets metadata
+  - `GET /api/health` - Health check
+- **Response Models**: Pydantic schemas in `backend/api/models/responses.py`
+- **Features**: CORS enabled, auto-generated OpenAPI docs at `/docs`
+
+### Frontend (`frontend/`)
+- **Framework**: Next.js 16 with App Router
+- **Language**: TypeScript with strict type checking
+- **Styling**: Tailwind CSS v3 + shadcn/ui component library
+- **Charts**: Recharts for data visualizations
+- **Architecture**: Server-side rendering with React Server Components
+- **Pages**:
+  - `/` - Home page with benchmark runs table
+  - `/results/[run_id]` - Detailed run view with aggregate results, interactive charts, and expandable Q&A
+  - `/datasets` - Dataset information browser
+- **API Client**: Type-safe wrapper in `frontend/lib/api-client.ts`
+- **Types**: Full TypeScript coverage matching backend schemas
+- **Features**:
+  - Loading states, error handling, responsive design
+  - Run-level aggregate results with cross-document score averaging
+  - Interactive metric comparison charts with selectable metrics
+  - Provider performance visualization
+
+### Database Schema (Prisma)
+- **7 Models**: User, BenchmarkRun, Document, Question, ProviderResult, QuestionResult, ApiRequest
+- **Relationships**: Run → ProviderResult → QuestionResult → Question → Document
+- **Migrations**: Located in `backend/prisma/migrations/`
+- **Schema**: `backend/prisma/schema.prisma`
+
 ## Components
 
 ### Core Pipeline (`src/core/`)

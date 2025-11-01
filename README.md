@@ -4,7 +4,7 @@
 
 RAGRace provides an automated benchmark framework to evaluate RAG providers on academic documents, Wikipedia articles, and more. All providers are tested on identical documents with standardized evaluation metrics (Ragas) for fair comparison.
 
-**Current Status**: Monorepo with FastAPI + Prisma ORM. Read-only API deployed. Full orchestrator pipeline with 3 RAG providers, benchmarking on Qasper (research papers), PolicyQA (privacy policies), and SQuAD 2.0 datasets. Results stored in Supabase PostgreSQL.
+**Current Status**: Monorepo with FastAPI + Prisma ORM + Next.js frontend. Read-only API and web interface deployed. Full orchestrator pipeline with 3 RAG providers, benchmarking on Qasper (research papers), PolicyQA (privacy policies), and SQuAD 2.0 datasets. Results stored in Supabase PostgreSQL.
 
 ## Integrated Providers
 
@@ -38,6 +38,30 @@ open http://localhost:8000/docs
 - `GET /api/v1/datasets` - List available datasets
 
 All results are stored in Supabase PostgreSQL and accessed via Prisma ORM.
+
+## Web Frontend
+
+RAGRace includes a Next.js web interface for browsing benchmark results:
+
+```bash
+# Start the frontend (requires backend API running)
+cd frontend
+npm install
+npm run dev
+
+# Open browser
+open http://localhost:3000
+```
+
+**Features:**
+- 📊 Browse all benchmark runs with sortable table
+- 🔍 Detailed run view with provider comparison
+- 📝 Expandable question-by-question results
+- 🎯 Ground truth vs provider answers
+- 📈 Evaluation scores and latency metrics
+- 🎨 Responsive design with shadcn/ui components
+
+See [frontend/README.md](frontend/README.md) for complete documentation.
 
 ## Quick Start
 
@@ -293,7 +317,7 @@ RAGRace/                      # Monorepo root
 │   │       └── preprocessors/ # Dataset-specific preprocessing
 │   ├── tests/                # Unit and integration tests
 │   └── requirements.txt      # Python dependencies
-├── frontend/                 # Next.js frontend (planned)
+├── frontend/                 # Next.js 16 frontend (TypeScript, Tailwind, shadcn/ui)
 ├── data/                     # Shared data (symlinked in backend/)
 │   ├── datasets/             # Downloaded datasets (auto-cached)
 │   │   ├── Qasper/           # Research papers (arxiv PDFs)
