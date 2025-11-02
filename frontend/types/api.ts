@@ -96,3 +96,39 @@ export interface BenchmarkResponse {
   message: string;
   duration_seconds: number | null;
 }
+
+// Dataset Performance Types
+export interface ProviderPerformance {
+  provider: string;
+  num_documents: number;
+  num_runs: number;
+  aggregated_scores: Record<string, number>;  // {metric: avg_score}
+  avg_duration_seconds: number | null;
+}
+
+export interface DatasetPerformanceSummary {
+  dataset_name: string;
+  total_runs: number;
+  total_documents: number;
+  providers: ProviderPerformance[];
+  last_run_date: string | null;  // ISO datetime string
+}
+
+export interface ProviderDocumentDetail {
+  doc_id: string;
+  doc_title: string;
+  run_id: string;
+  run_date: string;  // ISO datetime string
+  aggregated_scores: Record<string, any>;
+  duration_seconds: number | null;
+  status: 'success' | 'error';
+}
+
+export interface ProviderDetailResponse {
+  dataset_name: string;
+  provider: string;
+  total_documents: number;
+  total_runs: number;
+  overall_scores: Record<string, number>;
+  documents: ProviderDocumentDetail[];
+}

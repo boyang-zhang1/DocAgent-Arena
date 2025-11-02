@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import {
   Table,
@@ -18,6 +19,8 @@ interface ResultsTableProps {
 }
 
 export function ResultsTable({ runs }: ResultsTableProps) {
+  const router = useRouter();
+
   const getStatusBadgeVariant = (status: string) => {
     switch (status) {
       case 'completed':
@@ -64,7 +67,19 @@ export function ResultsTable({ runs }: ResultsTableProps) {
         </TableHeader>
         <TableBody>
           {runs.map((run) => (
-            <TableRow key={run.run_id} className="cursor-pointer hover:bg-muted/50">
+            <TableRow
+              key={run.run_id}
+              className="cursor-pointer hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70"
+              onClick={() => router.push(`/results/${run.run_id}`)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  router.push(`/results/${run.run_id}`);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+            >
               <TableCell>
                 <Link
                   href={`/results/${run.run_id}`}

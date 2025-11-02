@@ -9,6 +9,8 @@ import type {
   ResultsListResponse,
   BenchmarkRequest,
   BenchmarkResponse,
+  DatasetPerformanceSummary,
+  ProviderDetailResponse,
 } from '@/types/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -98,6 +100,34 @@ class ApiClient {
    */
   async getDatasets(): Promise<DatasetInfo[]> {
     return this.fetchWithError<DatasetInfo[]>('/api/v1/datasets');
+  }
+
+  /**
+   * Get aggregated provider performance for a dataset
+   *
+   * @param datasetName Dataset identifier (e.g., 'qasper', 'squad2')
+   * @returns Performance summary with provider rankings
+   */
+  async getDatasetPerformance(datasetName: string): Promise<DatasetPerformanceSummary> {
+    return this.fetchWithError<DatasetPerformanceSummary>(
+      `/api/v1/datasets/${encodeURIComponent(datasetName)}/performance`
+    );
+  }
+
+  /**
+   * Get detailed document-level results for a provider on a dataset
+   *
+   * @param datasetName Dataset identifier
+   * @param providerName Provider name
+   * @returns Document-level breakdown for the provider
+   */
+  async getProviderDetail(
+    datasetName: string,
+    providerName: string
+  ): Promise<ProviderDetailResponse> {
+    return this.fetchWithError<ProviderDetailResponse>(
+      `/api/v1/datasets/${encodeURIComponent(datasetName)}/providers/${encodeURIComponent(providerName)}`
+    );
   }
 
   /**

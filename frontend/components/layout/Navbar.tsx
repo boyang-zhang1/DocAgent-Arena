@@ -1,6 +1,30 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 export function Navbar() {
+  const pathname = usePathname();
+
+  const links = [
+    {
+      href: '/',
+      label: 'Results',
+      isActive:
+        pathname === '/' || pathname?.startsWith('/results'),
+    },
+    {
+      href: '/dashboard',
+      label: 'Run Benchmark',
+      isActive: pathname?.startsWith('/dashboard'),
+    },
+    {
+      href: '/datasets',
+      label: 'Datasets',
+      isActive: pathname?.startsWith('/datasets'),
+    },
+  ];
+
   return (
     <nav className="border-b bg-background">
       <div className="container mx-auto px-4 py-4">
@@ -12,24 +36,17 @@ export function Navbar() {
 
           {/* Navigation Links */}
           <div className="flex items-center space-x-6">
-            <Link
-              href="/"
-              className="text-sm font-medium transition-colors hover:text-primary"
-            >
-              Results
-            </Link>
-            <Link
-              href="/dashboard"
-              className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
-            >
-              Run Benchmark
-            </Link>
-            <Link
-              href="/datasets"
-              className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
-            >
-              Datasets
-            </Link>
+            {links.map(({ href, label, isActive }) => (
+              <Link
+                key={href}
+                href={href}
+                className={`text-sm font-medium transition-colors hover:text-primary ${
+                  isActive ? 'text-primary' : 'text-muted-foreground'
+                }`}
+              >
+                {label}
+              </Link>
+            ))}
           </div>
         </div>
       </div>

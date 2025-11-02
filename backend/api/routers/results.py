@@ -11,6 +11,10 @@ from api.models.responses import (
     DocumentResult,
     ProviderResult,
     QuestionResult,
+    DatasetPerformanceSummary,
+    ProviderPerformance,
+    ProviderDetailResponse,
+    ProviderDocumentDetail,
 )
 
 router = APIRouter()
@@ -209,3 +213,225 @@ async def list_datasets():
     ]
 
     return datasets
+
+
+@router.get("/datasets/{dataset_name}/performance", response_model=DatasetPerformanceSummary)
+async def get_dataset_performance(dataset_name: str, db=Depends(get_db)):
+    """
+    Get aggregated provider performance for a dataset.
+
+    This endpoint aggregates results across ALL runs and splits for the dataset:
+    - For each (document, provider) pair, uses the LATEST run's result
+    - Aggregates scores across all documents for each provider
+    - Returns provider rankings and performance metrics
+
+    Path parameters:
+    - dataset_name: Dataset identifier (e.g., 'qasper', 'squad2')
+
+    Returns:
+    Aggregated performance summary with provider rankings.
+    """
+    # Use raw SQL to efficiently get latest SUCCESS ProviderResult per (documentId, provider) pair
+    # Only include successful results - failed results are excluded from aggregation
+    query = """
+    WITH latest_results AS (
+        SELECT DISTINCT ON (pr.document_id, pr.provider)
+            pr.id,
+            pr.run_id,
+            pr.document_id,
+            pr.provider,
+            pr.status,
+            pr.aggregated_scores,
+            pr.duration_seconds,
+            pr.created_at,
+            br.completed_at
+        FROM provider_results pr
+        JOIN benchmark_runs br ON pr.run_id = br.id
+        WHERE br.dataset_name = $1
+          AND br.status = 'COMPLETED'
+          AND pr.status = 'SUCCESS'
+        ORDER BY pr.document_id, pr.provider, br.completed_at DESC NULLS LAST, pr.created_at DESC
+    )
+    SELECT * FROM latest_results
+    ORDER BY provider, document_id;
+    """
+
+    results = await prisma.query_raw(query, dataset_name)
+
+    if not results:
+        # Return empty summary if no results found
+        return DatasetPerformanceSummary(
+            dataset_name=dataset_name,
+            total_runs=0,
+            total_documents=0,
+            providers=[],
+            last_run_date=None,
+        )
+
+    # Get metadata: total runs and last run date
+    total_runs = await prisma.benchmarkrun.count(
+        where={"datasetName": dataset_name, "status": "COMPLETED"}
+    )
+
+    latest_run = await prisma.benchmarkrun.find_first(
+        where={"datasetName": dataset_name, "status": "COMPLETED"},
+        order={"completedAt": "desc"}
+    )
+    last_run_date = latest_run.completedAt if latest_run else None
+
+    # Count unique documents
+    unique_docs = set(r["document_id"] for r in results)
+    total_documents = len(unique_docs)
+
+    # Group by provider and aggregate
+    from collections import defaultdict
+    import statistics
+
+    provider_data = defaultdict(lambda: {
+        "results": [],
+        "durations": [],
+        "run_ids": set(),
+    })
+
+    for row in results:
+        provider = row["provider"]
+        provider_data[provider]["results"].append({
+            "scores": row["aggregated_scores"],
+            "status": row["status"],
+        })
+        if row["duration_seconds"]:
+            provider_data[provider]["durations"].append(row["duration_seconds"])
+        provider_data[provider]["run_ids"].add(row["run_id"])
+
+    # Build ProviderPerformance objects
+    providers = []
+    for provider_name, data in provider_data.items():
+        # Aggregate scores across all documents
+        all_scores = defaultdict(list)
+
+        for result in data["results"]:
+            # All results are SUCCESS (filtered by query)
+            scores_dict = result["scores"]
+            if isinstance(scores_dict, dict):
+                for metric, value in scores_dict.items():
+                    if isinstance(value, (int, float)):
+                        all_scores[metric].append(value)
+
+        # Calculate averages
+        aggregated_scores = {
+            metric: statistics.mean(values)
+            for metric, values in all_scores.items()
+        }
+
+        avg_duration = statistics.mean(data["durations"]) if data["durations"] else None
+
+        providers.append(ProviderPerformance(
+            provider=provider_name,
+            num_documents=len(data["results"]),
+            num_runs=len(data["run_ids"]),
+            aggregated_scores=aggregated_scores,
+            avg_duration_seconds=avg_duration,
+        ))
+
+    # Sort providers by first available metric (or alphabetically)
+    # Frontend will handle re-sorting based on selected metric
+    providers.sort(key=lambda p: p.provider)
+
+    return DatasetPerformanceSummary(
+        dataset_name=dataset_name,
+        total_runs=total_runs,
+        total_documents=total_documents,
+        providers=providers,
+        last_run_date=last_run_date,
+    )
+
+
+@router.get("/datasets/{dataset_name}/providers/{provider_name}", response_model=ProviderDetailResponse)
+async def get_provider_detail(dataset_name: str, provider_name: str, db=Depends(get_db)):
+    """
+    Get detailed document-level results for a specific provider on a dataset.
+
+    Shows which documents and runs contributed to the aggregated performance.
+
+    Path parameters:
+    - dataset_name: Dataset identifier (e.g., 'qasper')
+    - provider_name: Provider name (e.g., 'llamaindex')
+
+    Returns:
+    Document-level breakdown for the provider on this dataset.
+    """
+    # Get latest SUCCESS ProviderResult per document for this provider
+    query = """
+    WITH latest_results AS (
+        SELECT DISTINCT ON (pr.document_id)
+            pr.id,
+            pr.run_id,
+            pr.document_id,
+            pr.provider,
+            pr.status,
+            pr.aggregated_scores,
+            pr.duration_seconds,
+            pr.created_at,
+            br.completed_at,
+            br.run_id as bench_run_id,
+            d.doc_id,
+            d.doc_title
+        FROM provider_results pr
+        JOIN benchmark_runs br ON pr.run_id = br.id
+        JOIN documents d ON pr.document_id = d.id
+        WHERE br.dataset_name = $1
+          AND pr.provider = $2
+          AND br.status = 'COMPLETED'
+          AND pr.status = 'SUCCESS'
+        ORDER BY pr.document_id, br.completed_at DESC NULLS LAST, pr.created_at DESC
+    )
+    SELECT * FROM latest_results
+    ORDER BY bench_run_id DESC, doc_id;
+    """
+
+    results = await prisma.query_raw(query, dataset_name, provider_name)
+
+    if not results:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No results found for provider '{provider_name}' on dataset '{dataset_name}'"
+        )
+
+    # Build document details
+    documents = []
+    all_scores = defaultdict(list)
+    unique_runs = set()
+
+    for row in results:
+        documents.append(ProviderDocumentDetail(
+            doc_id=row["doc_id"],
+            doc_title=row["doc_title"],
+            run_id=row["bench_run_id"],
+            run_date=row["completed_at"],
+            aggregated_scores=row["aggregated_scores"],
+            duration_seconds=row["duration_seconds"],
+            status=row["status"].lower(),
+        ))
+        unique_runs.add(row["bench_run_id"])
+
+        # Collect scores for overall aggregation
+        if isinstance(row["aggregated_scores"], dict):
+            for metric, value in row["aggregated_scores"].items():
+                if isinstance(value, (int, float)):
+                    all_scores[metric].append(value)
+
+    # Calculate overall scores
+    import statistics
+    overall_scores = {
+        metric: statistics.mean(values)
+        for metric, values in all_scores.items()
+    }
+
+    return ProviderDetailResponse(
+        dataset_name=dataset_name,
+        provider=provider_name,
+        total_documents=len(documents),
+        total_runs=len(unique_runs),
+        overall_scores=overall_scores,
+        documents=documents,
+    )
