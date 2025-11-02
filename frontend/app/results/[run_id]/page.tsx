@@ -35,7 +35,7 @@ async function RunDetailContent({ runId }: { runId: string }) {
       <div className="space-y-6">
         {/* Back Link */}
         <Link
-          href="/"
+          href="/results"
           className="inline-flex items-center text-sm text-muted-foreground hover:text-primary"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />

@@ -69,7 +69,9 @@ export function OverallResultsCard({ documents, providers }: OverallResultsCardP
   const minScore = Math.min(...scores);
   const maxScore = Math.max(...scores);
   const range = maxScore - minScore;
-  const padding = range * 0.1; // 10% padding
+
+  // Use 10% padding, or 20% of max value if range is 0 (single provider)
+  const padding = range > 0 ? range * 0.1 : maxScore * 0.2;
 
   const yAxisDomain: AxisDomain = [
     Math.max(0, minScore - padding),
@@ -141,8 +143,8 @@ export function OverallResultsCard({ documents, providers }: OverallResultsCardP
             <h4 className="text-sm font-medium mb-3">
               {formatMetricName(selectedMetric)} Comparison
             </h4>
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="w-full">
+              <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
