@@ -233,13 +233,14 @@ async def get_dataset_documents(dataset_name: str, db=Depends(get_db)):
     """
     # First, get the latest ProviderResult IDs per (document, provider) using raw SQL
     # This is more efficient than fetching all and filtering in Python
-    latest_pr_ids_query = """
+    # Note: Using format() instead of parameterized query to avoid prepared statement cache issues
+    latest_pr_ids_query = f"""
     WITH latest_results AS (
         SELECT DISTINCT ON (pr.document_id, pr.provider)
             pr.id as provider_result_id
         FROM provider_results pr
         JOIN benchmark_runs br ON pr.run_id = br.id
-        WHERE br.dataset_name = $1
+        WHERE br.dataset_name = '{dataset_name.replace("'", "''")}'
           AND br.status = 'COMPLETED'
           AND pr.status = 'SUCCESS'
         ORDER BY pr.document_id, pr.provider, br.completed_at DESC NULLS LAST, pr.created_at DESC
@@ -247,7 +248,7 @@ async def get_dataset_documents(dataset_name: str, db=Depends(get_db)):
     SELECT provider_result_id FROM latest_results;
     """
 
-    latest_pr_ids_raw = await prisma.query_raw(latest_pr_ids_query, dataset_name)
+    latest_pr_ids_raw = await prisma.query_raw(latest_pr_ids_query)
 
     if not latest_pr_ids_raw:
         # No results found for this dataset
@@ -496,7 +497,8 @@ async def get_provider_detail(dataset_name: str, provider_name: str, db=Depends(
     Document-level breakdown for the provider on this dataset.
     """
     # Get latest SUCCESS ProviderResult per document for this provider
-    query = """
+    # Note: Using format() instead of parameterized query to avoid prepared statement cache issues
+    query = f"""
     WITH latest_results AS (
         SELECT DISTINCT ON (pr.document_id)
             pr.id,
@@ -514,8 +516,8 @@ async def get_provider_detail(dataset_name: str, provider_name: str, db=Depends(
         FROM provider_results pr
         JOIN benchmark_runs br ON pr.run_id = br.id
         JOIN documents d ON pr.document_id = d.id
-        WHERE br.dataset_name = $1
-          AND pr.provider = $2
+        WHERE br.dataset_name = '{dataset_name.replace("'", "''")}'
+          AND pr.provider = '{provider_name.replace("'", "''")}'
           AND br.status = 'COMPLETED'
           AND pr.status = 'SUCCESS'
         ORDER BY pr.document_id, br.completed_at DESC NULLS LAST, pr.created_at DESC
@@ -524,7 +526,7 @@ async def get_provider_detail(dataset_name: str, provider_name: str, db=Depends(
     ORDER BY bench_run_id DESC, doc_id;
     """
 
-    results = await prisma.query_raw(query, dataset_name, provider_name)
+    results = await prisma.query_raw(query)
 
     if not results:
         raise HTTPException(
