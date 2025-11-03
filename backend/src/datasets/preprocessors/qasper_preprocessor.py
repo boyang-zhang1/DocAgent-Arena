@@ -28,14 +28,29 @@ class QasperPreprocessor(BasePreprocessor):
     4. Create samples: question + raw_pdf_text + ground_truth_answer
     """
 
-    def __init__(self, cache_dir: str = "data/datasets/Qasper/pdfs"):
+    def __init__(
+        self,
+        cache_dir: str = "data/datasets/Qasper/pdfs",
+        use_storage: bool = True
+    ):
         """
         Initialize Qasper preprocessor.
 
         Args:
-            cache_dir: Directory to cache downloaded PDFs
+            cache_dir: Directory to cache downloaded PDFs (local fallback)
+            use_storage: If True, check Supabase Storage for PDFs first
         """
         self.downloader = ArxivDownloader(cache_dir=cache_dir)
+        self.use_storage = use_storage
+        self.storage = None
+
+        if use_storage:
+            try:
+                from api.services.storage import SupabaseStorageService
+                self.storage = SupabaseStorageService()
+            except Exception as e:
+                logger.warning(f"Failed to initialize storage service: {e}, using local only")
+                self.use_storage = False
 
     def _extract_pdf_text(self, pdf_path: Path) -> Optional[str]:
         """
@@ -130,117 +145,158 @@ class QasperPreprocessor(BasePreprocessor):
         """
         logger.info(f"Loading Qasper dataset (split: {split})")
 
-        # Download parquet file from HuggingFace API
-        # (dataset scripts no longer supported, must use parquet directly)
-        cache_dir = Path("data/datasets/Qasper/cache")
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        parquet_cache = cache_dir / f"{split}.parquet"
+        # Try to get parquet file: 1) Cloud storage, 2) Download from HuggingFace API
+        parquet_path = None
+        temp_file = None
 
-        if not parquet_cache.exists():
-            logger.info(f"Downloading Qasper {split} split from HuggingFace API...")
-            api_url = f"https://huggingface.co/api/datasets/allenai/qasper/parquet/qasper/{split}/0.parquet"
-            response = requests.get(api_url, stream=True)
-            response.raise_for_status()
+        # 1. Check cloud storage first
+        if self.use_storage and self.storage:
+            storage_path = f"qasper/cache/{split}.parquet"
+            logger.info(f"Checking cloud storage for: {storage_path}")
+            try:
+                if self.storage.check_exists(storage_path):
+                    logger.info(f"Found parquet in cloud storage: {storage_path}")
+                    temp_file = self.storage.download_to_temp(storage_path)
+                    parquet_path = temp_file
+                else:
+                    logger.info(f"Parquet not found in cloud storage, will download from HuggingFace")
+            except Exception as e:
+                logger.warning(f"Failed to check/download from cloud storage: {e}")
 
-            with open(parquet_cache, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            logger.info(f"Downloaded and cached to {parquet_cache}")
-        else:
-            logger.info(f"Using cached parquet file: {parquet_cache}")
+        # 2. Fall back to local cache or download from HuggingFace
+        if parquet_path is None:
+            cache_dir = Path("data/datasets/Qasper/cache")
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            parquet_cache = cache_dir / f"{split}.parquet"
 
-        # Load dataset from cached parquet file
-        dataset = load_dataset("parquet", data_files=str(parquet_cache), split="train")
+            if not parquet_cache.exists():
+                logger.info(f"Downloading Qasper {split} split from HuggingFace API...")
+                api_url = f"https://huggingface.co/api/datasets/allenai/qasper/parquet/qasper/{split}/0.parquet"
+                response = requests.get(api_url, stream=True)
+                response.raise_for_status()
 
-        samples = []
-        stats = {
-            'total_docs': 0,
-            'downloaded_docs': 0,
-            'failed_downloads': 0,
-            'total_questions': 0,
-            'skipped_unanswerable': 0,
-            'samples_created': 0
-        }
+                with open(parquet_cache, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                logger.info(f"Downloaded and cached to {parquet_cache}")
+            else:
+                logger.info(f"Using cached parquet file: {parquet_cache}")
 
-        # Process documents
-        docs_to_process = min(len(dataset), max_docs) if max_docs else len(dataset)
-        logger.info(f"Processing {docs_to_process} documents from {len(dataset)} total")
+            parquet_path = parquet_cache
 
-        for i, doc_data in enumerate(dataset):
-            if max_docs and i >= max_docs:
-                break
+        try:
+            # Load dataset from parquet file
+            dataset = load_dataset("parquet", data_files=str(parquet_path), split="train")
 
-            stats['total_docs'] += 1
-            arxiv_id = doc_data['id']
-            title = doc_data['title']
+            samples = []
+            stats = {
+                'total_docs': 0,
+                'downloaded_docs': 0,
+                'failed_downloads': 0,
+                'total_questions': 0,
+                'skipped_unanswerable': 0,
+                'samples_created': 0
+            }
 
-            logger.info(f"[{i+1}/{docs_to_process}] Processing document: {arxiv_id}")
+            # Process documents
+            docs_to_process = min(len(dataset), max_docs) if max_docs else len(dataset)
+            logger.info(f"Processing {docs_to_process} documents from {len(dataset)} total")
 
-            # Download PDF from arxiv
-            pdf_path = self.downloader.download(arxiv_id)
-            if pdf_path is None:
-                logger.warning(f"Failed to download document {arxiv_id}, skipping")
-                stats['failed_downloads'] += 1
-                continue
+            for i, doc_data in enumerate(dataset):
+                if max_docs and i >= max_docs:
+                    break
 
-            # Extract raw text from PDF
-            pdf_text = self._extract_pdf_text(pdf_path)
-            if pdf_text is None:
-                logger.warning(f"Failed to extract text from {arxiv_id}, skipping")
-                stats['failed_downloads'] += 1
-                continue
+                stats['total_docs'] += 1
+                arxiv_id = doc_data['id']
+                title = doc_data['title']
 
-            stats['downloaded_docs'] += 1
+                logger.info(f"[{i+1}/{docs_to_process}] Processing document: {arxiv_id}")
 
-            # Process questions for this document
-            qas = doc_data['qas']
-            questions = qas['question']
-            question_ids = qas['question_id']
-            answers_list = qas['answers']
+                # Try to get PDF: 1) Cloud storage, 2) Local cache, 3) Download from arxiv
+                pdf_path = None
 
-            # Create sample for each question
-            for q_id, question, answer_dict in zip(question_ids, questions, answers_list):
-                stats['total_questions'] += 1
+                # 1. Check Supabase Storage first
+                if self.use_storage and self.storage:
+                    storage_path = f"qasper/pdfs/{arxiv_id}.pdf"
+                    if self.storage.check_exists(storage_path):
+                        logger.info(f"Found PDF in cloud storage: {storage_path}")
+                        try:
+                            pdf_path = self.storage.download_to_temp(storage_path)
+                        except Exception as e:
+                            logger.warning(f"Failed to download from storage: {e}, trying local/arxiv")
 
-                # Extract answer text
-                answer = self._extract_answer(answer_dict)
+                # 2. Fall back to local cache or download from arxiv
+                if pdf_path is None:
+                    pdf_path = self.downloader.download(arxiv_id)
 
-                # Skip unanswerable if requested
-                if filter_unanswerable and not answer:
-                    stats['skipped_unanswerable'] += 1
+                if pdf_path is None:
+                    logger.warning(f"Failed to get document {arxiv_id}, skipping")
+                    stats['failed_downloads'] += 1
                     continue
 
-                # Create sample
-                sample = DatasetSample(
-                    question=question,
-                    context=pdf_text,  # Raw PDF text - no preprocessing
-                    ground_truth=answer,
-                    metadata={
-                        'question_id': q_id,
-                        'doc_id': arxiv_id,
-                        'doc_title': title,
-                        'is_unanswerable': not bool(answer),
-                        'pdf_path': str(pdf_path)
-                    }
-                )
-                samples.append(sample)
-                stats['samples_created'] += 1
+                # Extract raw text from PDF
+                pdf_text = self._extract_pdf_text(pdf_path)
+                if pdf_text is None:
+                    logger.warning(f"Failed to extract text from {arxiv_id}, skipping")
+                    stats['failed_downloads'] += 1
+                    continue
 
-        # Create dataset metadata
-        dataset_metadata = {
-            'dataset': 'Qasper',
-            'split': split,
-            **stats,
-            'filter_unanswerable': filter_unanswerable
-        }
+                stats['downloaded_docs'] += 1
 
-        logger.info(
-            f"Qasper processing complete: {stats['downloaded_docs']}/{stats['total_docs']} documents, "
-            f"{stats['samples_created']} samples created"
-        )
+                # Process questions for this document
+                qas = doc_data['qas']
+                questions = qas['question']
+                question_ids = qas['question_id']
+                answers_list = qas['answers']
 
-        return ProcessedDataset(
-            samples=samples,
-            dataset_name='Qasper',
-            metadata=dataset_metadata
-        )
+                # Create sample for each question
+                for q_id, question, answer_dict in zip(question_ids, questions, answers_list):
+                    stats['total_questions'] += 1
+
+                    # Extract answer text
+                    answer = self._extract_answer(answer_dict)
+
+                    # Skip unanswerable if requested
+                    if filter_unanswerable and not answer:
+                        stats['skipped_unanswerable'] += 1
+                        continue
+
+                    # Create sample
+                    sample = DatasetSample(
+                        question=question,
+                        context=pdf_text,  # Raw PDF text - no preprocessing
+                        ground_truth=answer,
+                        metadata={
+                            'question_id': q_id,
+                            'doc_id': arxiv_id,
+                            'doc_title': title,
+                            'is_unanswerable': not bool(answer),
+                            'pdf_path': str(pdf_path)
+                        }
+                    )
+                    samples.append(sample)
+                    stats['samples_created'] += 1
+
+            # Create dataset metadata
+            dataset_metadata = {
+                'dataset': 'Qasper',
+                'split': split,
+                **stats,
+                'filter_unanswerable': filter_unanswerable
+            }
+
+            logger.info(
+                f"Qasper processing complete: {stats['downloaded_docs']}/{stats['total_docs']} documents, "
+                f"{stats['samples_created']} samples created"
+            )
+
+            return ProcessedDataset(
+                samples=samples,
+                dataset_name='Qasper',
+                metadata=dataset_metadata
+            )
+        finally:
+            # Clean up temp file if we downloaded from storage
+            if temp_file and Path(temp_file).exists():
+                Path(temp_file).unlink()
+                logger.debug(f"Cleaned up temp file: {temp_file}")

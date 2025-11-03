@@ -2,18 +2,17 @@
 
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   calculateOverallScores,
   sortProvidersByMetric,
   getAllMetricNames,
   formatScore,
-  formatDuration,
   type ProviderOverallScores,
 } from '@/lib/aggregateScores';
 import type { DocumentResult } from '@/types/api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import type { AxisDomain } from 'recharts/types/util/types';
 import { TrendingUp } from 'lucide-react';
 
 interface OverallResultsCardProps {
@@ -31,20 +30,53 @@ export function OverallResultsCard({ documents, providers }: OverallResultsCardP
   const primaryMetric = findPrimaryMetric(sortedScores);
   const [selectedMetric, setSelectedMetric] = useState<string>(primaryMetric);
 
+  // Determine if the selected metric is duration-based
+  const isDurationMetric = selectedMetric.toLowerCase().includes('duration') ||
+                          selectedMetric.toLowerCase().includes('seconds');
+
+  // Re-sort providers based on selected metric
+  const sortedByMetric = [...sortedScores].sort((a, b) => {
+    const scoreA = a.averageScores[selectedMetric] ?? (isDurationMetric ? Infinity : -Infinity);
+    const scoreB = b.averageScores[selectedMetric] ?? (isDurationMetric ? Infinity : -Infinity);
+    // For duration: lower is better (ascending)
+    // For scores: higher is better (descending)
+    return isDurationMetric ? scoreA - scoreB : scoreB - scoreA;
+  });
+
+  // Calculate best value for each metric (for bolding)
+  const bestValues = metricNames.reduce((acc, metric) => {
+    const values = sortedScores
+      .map((p) => p.averageScores[metric])
+      .filter((v) => v !== undefined && v !== null && !isNaN(v)) as number[];
+
+    if (values.length > 0) {
+      const isMetricDuration =
+        metric.toLowerCase().includes('duration') || metric.toLowerCase().includes('seconds');
+      // For duration: lowest is best, for scores: highest is best
+      acc[metric] = isMetricDuration ? Math.min(...values) : Math.max(...values);
+    }
+    return acc;
+  }, {} as Record<string, number>);
+
   // Prepare chart data for selected metric
-  const chartData = sortedScores.map(p => ({
+  const chartData = sortedByMetric.map(p => ({
     provider: p.provider,
     score: p.averageScores[selectedMetric] ?? 0,
   }));
 
-  // Determine if the selected metric is duration-based (needs different Y-axis scale)
-  const isDurationMetric = selectedMetric.toLowerCase().includes('duration') ||
-                          selectedMetric.toLowerCase().includes('seconds');
+  // Calculate dynamic Y-axis domain with padding
+  const scores = chartData.map((d) => d.score).filter((s) => !isNaN(s) && isFinite(s));
+  const minScore = Math.min(...scores);
+  const maxScore = Math.max(...scores);
+  const range = maxScore - minScore;
 
-  // Calculate appropriate Y-axis domain
-  const yAxisDomain = isDurationMetric
-    ? [0, 'auto' as const]  // Auto-scale for duration (can be 100s of seconds)
-    : [0, 1];                // Fixed 0-1 for score metrics
+  // Use 10% padding, or 20% of max value if range is 0 (single provider)
+  const padding = range > 0 ? range * 0.1 : maxScore * 0.2;
+
+  const yAxisDomain: AxisDomain = [
+    Math.max(0, minScore - padding),
+    maxScore + padding,
+  ] as const;
 
   return (
     <Card>
@@ -59,72 +91,50 @@ export function OverallResultsCard({ documents, providers }: OverallResultsCardP
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left: Scores Table */}
+          {/* Left: Metrics Table */}
           <div>
-            <h4 className="text-sm font-medium mb-3">Average Scores by Provider</h4>
-            <div className="rounded-md border">
+            <h4 className="text-sm font-medium mb-3">Average Metrics</h4>
+            <div className="rounded-md border overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="px-3 py-2 text-left font-medium">Provider</th>
-                    <th className="px-3 py-2 text-left font-medium">Avg Duration</th>
-                    <th className="px-3 py-2 text-left font-medium">Success</th>
+                    <th className="px-3 py-2 text-left font-medium sticky left-0 bg-muted/50">Provider</th>
+                    {metricNames.map(metric => (
+                      <th key={metric} className="px-3 py-2 text-left font-medium whitespace-nowrap">
+                        {formatMetricName(metric)}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedScores.map((result) => (
+                  {sortedByMetric.map(result => (
                     <tr key={result.provider} className="border-b last:border-0">
-                      <td className="px-3 py-2">
-                        <span className="font-medium">{result.provider}</span>
+                      <td className="px-3 py-2 font-medium sticky left-0 bg-background">
+                        {result.provider}
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground">
-                        {formatDuration(result.averageDuration)}
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge
-                          variant={result.successRate === 1 ? 'default' : result.successRate > 0 ? 'secondary' : 'destructive'}
-                          className="text-xs"
-                        >
-                          {(result.successRate * 100).toFixed(0)}%
-                        </Badge>
-                      </td>
+                      {metricNames.map(metric => {
+                        const value = result.averageScores[metric];
+                        const isBest =
+                          value !== undefined &&
+                          !isNaN(value) &&
+                          bestValues[metric] !== undefined &&
+                          Math.abs(value - bestValues[metric]) < 0.0001;
+
+                        return (
+                          <td
+                            key={metric}
+                            className={`px-3 py-2 text-muted-foreground tabular-nums ${
+                              isBest ? 'font-bold text-foreground' : ''
+                            }`}
+                          >
+                            {formatScore(value)}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-
-            {/* Metrics Table */}
-            <div className="mt-4">
-              <h4 className="text-sm font-medium mb-3">Average Metrics</h4>
-              <div className="rounded-md border overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="px-3 py-2 text-left font-medium sticky left-0 bg-muted/50">Provider</th>
-                      {metricNames.map(metric => (
-                        <th key={metric} className="px-3 py-2 text-left font-medium whitespace-nowrap">
-                          {formatMetricName(metric)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedScores.map(result => (
-                      <tr key={result.provider} className="border-b last:border-0">
-                        <td className="px-3 py-2 font-medium sticky left-0 bg-background">
-                          {result.provider}
-                        </td>
-                        {metricNames.map(metric => (
-                          <td key={metric} className="px-3 py-2 text-muted-foreground tabular-nums">
-                            {formatScore(result.averageScores[metric])}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </div>
           </div>
 
@@ -133,8 +143,8 @@ export function OverallResultsCard({ documents, providers }: OverallResultsCardP
             <h4 className="text-sm font-medium mb-3">
               {formatMetricName(selectedMetric)} Comparison
             </h4>
-            <div className="h-[400px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="w-full">
+              <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis
@@ -147,6 +157,7 @@ export function OverallResultsCard({ documents, providers }: OverallResultsCardP
                   <YAxis
                     domain={yAxisDomain}
                     tick={{ fontSize: 12 }}
+                    tickFormatter={(value) => value.toFixed(2)}
                     label={{
                       value: isDurationMetric ? 'Seconds' : 'Score',
                       angle: -90,

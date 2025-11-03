@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.db import lifespan
-from api.routers import results
+from api.routers import results, benchmarks
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -24,6 +24,7 @@ app.add_middleware(
 
 # Register routers
 app.include_router(results.router, prefix="/api/v1", tags=["results"])
+app.include_router(benchmarks.router, prefix="/api/v1/benchmarks", tags=["benchmarks"])
 
 
 @app.get("/api/health")

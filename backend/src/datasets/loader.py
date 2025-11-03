@@ -88,19 +88,20 @@ class DatasetLoader:
         return processed
 
     @staticmethod
-    def load_squad(file_path: str, **kwargs) -> ProcessedDataset:
+    def load_squad(file_path: str = None, storage_path: str = None, **kwargs) -> ProcessedDataset:
         """
         Convenience method to load SQuAD dataset.
 
         Args:
-            file_path: Path to SQuAD JSON file
+            file_path: Path to local SQuAD JSON file (optional)
+            storage_path: Path in Supabase Storage (e.g., 'squad2/train-v2.0.json')
             **kwargs: SQuAD preprocessor options
 
         Returns:
             ProcessedDataset with SQuAD samples
         """
         loader = DatasetLoader('squad')
-        return loader.load(file_path, **kwargs)
+        return loader.load(file_path=file_path, storage_path=storage_path, **kwargs)
 
     @staticmethod
     def load_qasper(split: str = "train", **kwargs) -> ProcessedDataset:

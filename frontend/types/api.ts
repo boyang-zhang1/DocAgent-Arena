@@ -50,7 +50,7 @@ export interface RunDetail {
   num_docs: number;
   num_questions: number;
   config: Record<string, any>;  // Full benchmark config
-  started_at: string;
+  started_at: string | null;
   completed_at: string | null;
   duration_seconds: number | null;
   error_message: string | null;
@@ -76,4 +76,59 @@ export interface ResultsListResponse {
 // API Error Response
 export interface ApiError {
   detail: string;
+}
+
+// Benchmark Creation Request
+export interface BenchmarkRequest {
+  dataset: string;
+  split: string;
+  providers: string[];
+  max_docs: number | null;
+  max_questions_per_doc: number | null;
+  filter_unanswerable: boolean;
+  api_keys?: Record<string, string>;  // Optional: provider API keys (openai, llamaindex, landingai, reducto)
+}
+
+// Benchmark Creation Response
+export interface BenchmarkResponse {
+  run_id: string;
+  status: string;
+  message: string;
+  duration_seconds: number | null;
+}
+
+// Dataset Performance Types
+export interface ProviderPerformance {
+  provider: string;
+  num_documents: number;
+  num_runs: number;
+  aggregated_scores: Record<string, number>;  // {metric: avg_score}
+  avg_duration_seconds: number | null;
+}
+
+export interface DatasetPerformanceSummary {
+  dataset_name: string;
+  total_runs: number;
+  total_documents: number;
+  providers: ProviderPerformance[];
+  last_run_date: string | null;  // ISO datetime string
+}
+
+export interface ProviderDocumentDetail {
+  doc_id: string;
+  doc_title: string;
+  run_id: string;
+  run_date: string;  // ISO datetime string
+  aggregated_scores: Record<string, any>;
+  duration_seconds: number | null;
+  status: 'success' | 'error';
+}
+
+export interface ProviderDetailResponse {
+  dataset_name: string;
+  provider: string;
+  total_documents: number;
+  total_runs: number;
+  overall_scores: Record<string, number>;
+  documents: ProviderDocumentDetail[];
 }

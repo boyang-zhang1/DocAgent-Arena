@@ -74,7 +74,7 @@ class RunDetail(BaseModel):
     num_docs: int
     num_questions: int
     config: Dict[str, Any] = Field(default_factory=dict, description="Full benchmark configuration")
-    started_at: datetime
+    started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     duration_seconds: Optional[float] = None
     error_message: Optional[str] = None
@@ -105,6 +105,61 @@ class ResultsListResponse(BaseModel):
     total: int = Field(..., description="Total number of runs matching filters")
     limit: int
     offset: int
+
+    class Config:
+        from_attributes = True
+
+
+class ProviderPerformance(BaseModel):
+    """Aggregated performance for a provider on a dataset."""
+
+    provider: str
+    num_documents: int = Field(..., description="Number of documents processed")
+    num_runs: int = Field(..., description="Number of runs contributing to this aggregate")
+    aggregated_scores: Dict[str, float] = Field(default_factory=dict, description="Average scores by metric")
+    avg_duration_seconds: Optional[float] = Field(None, description="Average duration across documents")
+
+    class Config:
+        from_attributes = True
+
+
+class DatasetPerformanceSummary(BaseModel):
+    """Performance summary for all providers on a dataset."""
+
+    dataset_name: str
+    total_runs: int = Field(..., description="Total benchmark runs for this dataset")
+    total_documents: int = Field(..., description="Unique documents tested")
+    providers: List[ProviderPerformance] = Field(default_factory=list)
+    last_run_date: Optional[datetime] = Field(None, description="Most recent run completion time")
+
+    class Config:
+        from_attributes = True
+
+
+class ProviderDocumentDetail(BaseModel):
+    """Document-level detail for a provider."""
+
+    doc_id: str
+    doc_title: str
+    run_id: str
+    run_date: datetime
+    aggregated_scores: Dict[str, Any]
+    duration_seconds: Optional[float]
+    status: str
+
+    class Config:
+        from_attributes = True
+
+
+class ProviderDetailResponse(BaseModel):
+    """Detailed results for a specific provider on a dataset."""
+
+    dataset_name: str
+    provider: str
+    total_documents: int
+    total_runs: int
+    overall_scores: Dict[str, float] = Field(default_factory=dict, description="Aggregated scores across all documents")
+    documents: List[ProviderDocumentDetail] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
