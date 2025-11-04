@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface PDFViewerProps {
   fileId: string;
@@ -12,24 +12,26 @@ interface PDFViewerProps {
 export function PDFViewer({
   fileId,
   currentPage,
-  onPageChange,
-  onLoadSuccess,
 }: PDFViewerProps) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-  const pdfUrl = `${apiUrl}/api/v1/parse/file/${fileId}`;
+  // Use Adobe PDF parameters for page control and hide sidebar
+  const pdfUrl = `${apiUrl}/api/v1/parse/file/${fileId}#page=${currentPage}&navpanes=0&toolbar=0`;
 
   return (
-    <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
-      <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
-        Original PDF - Page {currentPage}
-      </div>
-      <div className="flex justify-center">
-        <iframe
-          src={pdfUrl}
-          className="w-full h-[600px] border-0"
-          title="PDF Viewer"
-        />
-      </div>
-    </div>
+    <Card className="h-full">
+      <CardHeader>
+        <CardTitle className="text-lg">Original PDF</CardTitle>
+      </CardHeader>
+      <CardContent className="p-6">
+        <div className="flex justify-center bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+          <iframe
+            key={currentPage} // Force reload on page change
+            src={pdfUrl}
+            className="w-full h-[700px] border-0"
+            title="PDF Viewer"
+          />
+        </div>
+      </CardContent>
+    </Card>
   );
 }

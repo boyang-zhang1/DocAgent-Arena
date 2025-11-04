@@ -34,40 +34,42 @@ export function PageNavigator({
   };
 
   return (
-    <div className="flex items-center justify-center gap-4 py-4">
+    <div className="flex items-center justify-center gap-6 py-6">
       <Button
         variant="outline"
-        size="sm"
+        size="lg"
         onClick={handlePrevious}
         disabled={currentPage === 1}
+        className="px-6"
       >
-        <ChevronLeft className="h-4 w-4 mr-1" />
+        <ChevronLeft className="h-5 w-5 mr-2" />
         Previous
       </Button>
 
-      <div className="flex items-center gap-2">
-        <span className="text-sm text-gray-600 dark:text-gray-400">Page</span>
+      <div className="flex items-center gap-3">
+        <span className="text-base font-medium text-gray-600 dark:text-gray-400">Page</span>
         <input
           type="number"
           min={1}
           max={totalPages}
           value={currentPage}
           onChange={handlePageInput}
-          className="w-16 text-center border rounded px-2 py-1 text-sm"
+          className="w-20 text-center border rounded px-3 py-2 text-base font-medium"
         />
-        <span className="text-sm text-gray-600 dark:text-gray-400">
+        <span className="text-base font-medium text-gray-600 dark:text-gray-400">
           of {totalPages}
         </span>
       </div>
 
       <Button
         variant="outline"
-        size="sm"
+        size="lg"
         onClick={handleNext}
         disabled={currentPage === totalPages}
+        className="px-6"
       >
         Next
-        <ChevronRight className="h-4 w-4 ml-1" />
+        <ChevronRight className="h-5 w-5 ml-2" />
       </Button>
     </div>
   );

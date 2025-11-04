@@ -21,13 +21,13 @@ export function MarkdownViewer({
       <CardHeader>
         <CardTitle className="text-lg">{title}</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-6">
         {isLoading ? (
           <div className="text-center text-gray-500 p-4">
             Parsing with {title}...
           </div>
         ) : markdown ? (
-          <div className="prose dark:prose-invert max-w-none prose-sm prose-headings:font-bold prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg">
+          <div className="prose dark:prose-invert max-w-none prose-lg prose-headings:font-bold prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl text-[17px] leading-relaxed">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeRaw]}

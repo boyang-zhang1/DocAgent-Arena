@@ -135,7 +135,7 @@ export default function ParsePage() {
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
+    <div className="container mx-auto p-6 max-w-full px-8">
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-2">PDF Parse & Compare</h1>
         <p className="text-gray-600 dark:text-gray-400">
@@ -182,8 +182,8 @@ export default function ParsePage() {
             </div>
           ) : parseResults ? (
             <>
-              {/* PDF Viewer (Upper Section) */}
-              <div>
+              {/* PDF Viewer (Upper Section - Centered with Max Width) */}
+              <div className="max-w-4xl mx-auto">
                 <PDFViewer
                   fileId={fileId}
                   currentPage={currentPage}
@@ -196,7 +196,7 @@ export default function ParsePage() {
                 />
               </div>
 
-              {/* Page Navigator */}
+              {/* Page Navigator - Below PDF, Above Providers */}
               {totalPages > 0 && (
                 <PageNavigator
                   currentPage={currentPage}
@@ -205,8 +205,8 @@ export default function ParsePage() {
                 />
               )}
 
-              {/* Markdown Comparison (Lower Section) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Provider Comparison (Lower Section - Two Wide Columns) */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <MarkdownViewer
                   title="LlamaIndex"
                   markdown={getLlamaIndexMarkdown()}
