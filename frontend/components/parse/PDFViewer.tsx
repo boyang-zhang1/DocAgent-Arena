@@ -19,8 +19,8 @@ export function PDFViewer({
 
   return (
     <Card className="h-full">
-      <CardHeader>
-        <CardTitle className="text-lg">Original PDF</CardTitle>
+      <CardHeader className="pb-4">
+        <CardTitle className="text-2xl font-bold tracking-tight">Original PDF</CardTitle>
       </CardHeader>
       <CardContent className="p-6">
         <div className="flex justify-center bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">

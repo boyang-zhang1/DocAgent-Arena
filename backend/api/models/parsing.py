@@ -6,6 +6,24 @@ from typing import List, Dict, Any
 from pydantic import BaseModel, Field
 
 
+class ProviderCost(BaseModel):
+    """Cost breakdown for a single provider."""
+
+    provider: str
+    credits: float
+    usd_per_credit: float
+    total_usd: float
+    details: Dict[str, Any] = {}
+
+
+class CostComparisonResponse(BaseModel):
+    """Response with cost breakdown for all providers."""
+
+    file_id: str
+    costs: Dict[str, ProviderCost]
+    total_usd: float
+
+
 class ParseCompareRequest(BaseModel):
     """
     Request model for comparing PDF parsing across providers.
@@ -13,7 +31,11 @@ class ParseCompareRequest(BaseModel):
     Example:
         {
             "file_id": "550e8400-e29b-41d4-a716-446655440000",
-            "providers": ["llamaindex", "reducto"]
+            "providers": ["llamaindex", "reducto"],
+            "api_keys": {
+                "llamaindex": "llx_...",
+                "reducto": "sk_..."
+            }
         }
     """
 
@@ -22,12 +44,19 @@ class ParseCompareRequest(BaseModel):
         default=["llamaindex", "reducto"],
         description="List of parser providers to compare",
     )
+    api_keys: Dict[str, str] = Field(
+        ..., description="API keys for each provider"
+    )
 
     class Config:
         json_schema_extra = {
             "example": {
                 "file_id": "550e8400-e29b-41d4-a716-446655440000",
                 "providers": ["llamaindex", "reducto"],
+                "api_keys": {
+                    "llamaindex": "llx_...",
+                    "reducto": "sk_..."
+                }
             }
         }
 
@@ -70,6 +99,7 @@ class ProviderParseResult(BaseModel):
     total_pages: int
     pages: List[PageData]
     processing_time: float
+    usage: Dict[str, Any] = {}
 
 
 class ParseCompareResponse(BaseModel):

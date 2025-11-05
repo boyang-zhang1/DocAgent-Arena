@@ -14,19 +14,19 @@ from .base import BaseParseAdapter, PageResult, ParseResult
 class ReductoParser(BaseParseAdapter):
     """Parser using Reducto API with semantic chunking."""
 
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str):
         """
         Initialize Reducto parser.
 
         Args:
-            api_key: API key for Reducto. If None, reads from REDUCTO_API_KEY env var.
-        """
-        self.api_key = api_key or os.getenv("REDUCTO_API_KEY")
-        if not self.api_key:
-            raise ValueError("Reducto API key not provided")
+            api_key: API key for Reducto (required).
 
-        # Set API key in environment for Reducto client
-        os.environ["REDUCTO_API_KEY"] = self.api_key
+        Raises:
+            ValueError: If api_key is empty or None.
+        """
+        if not api_key:
+            raise ValueError("Reducto API key is required")
+        self.api_key = api_key
 
     async def parse_pdf(self, pdf_path: Path) -> ParseResult:
         """
@@ -40,7 +40,10 @@ class ReductoParser(BaseParseAdapter):
         """
         start_time = time.time()
 
-        # Initialize Reducto client
+        # Initialize Reducto client with API key
+        # Note: Reducto client may still read from environment variable
+        # Set it temporarily to avoid requiring global environment configuration
+        os.environ["REDUCTO_API_KEY"] = self.api_key
         client = Reducto()
 
         # Upload file
@@ -110,6 +113,17 @@ class ReductoParser(BaseParseAdapter):
 
         processing_time = time.time() - start_time
 
+        # Extract usage information if available
+        usage = {}
+        if hasattr(result, 'usage'):
+            usage = result.usage if isinstance(result.usage, dict) else result.usage.__dict__
+        elif hasattr(result, '__dict__') and 'usage' in result.__dict__:
+            usage_attr = result.__dict__['usage']
+            usage = usage_attr if isinstance(usage_attr, dict) else usage_attr.__dict__
+
+        # Add num_pages to usage for cost calculation
+        usage['num_pages'] = len(pages)
+
         return ParseResult(
             provider="reducto",
             total_pages=len(pages),
@@ -118,6 +132,7 @@ class ReductoParser(BaseParseAdapter):
                 "total_chunks": len(chunks),
             },
             processing_time=processing_time,
+            usage=usage,
         )
 
     def _map_chunks_to_pages(self, chunks: List[Dict[str, Any]]) -> List[PageResult]:

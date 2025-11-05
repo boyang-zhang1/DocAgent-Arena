@@ -15,16 +15,19 @@ from .base import BaseParseAdapter, PageResult, ParseResult
 class LandingAIParser(BaseParseAdapter):
     """Parser using LandingAI's Vision Agent API."""
 
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str):
         """
         Initialize LandingAI parser.
 
         Args:
-            api_key: API key for LandingAI. If None, reads from VISION_AGENT_API_KEY env var.
+            api_key: API key for LandingAI (required).
+
+        Raises:
+            ValueError: If api_key is empty or None.
         """
-        self.api_key = api_key or os.getenv("VISION_AGENT_API_KEY")
-        if not self.api_key:
-            raise ValueError("LandingAI API key not provided")
+        if not api_key:
+            raise ValueError("LandingAI API key is required")
+        self.api_key = api_key
 
     def _normalize_markdown(self, markdown: str) -> str:
         """
@@ -191,4 +194,9 @@ class LandingAIParser(BaseParseAdapter):
             pages=pages,
             raw_response=response_data,
             processing_time=processing_time,
+            usage={
+                "num_pages": total_pages,
+                "credits_per_page": 3,  # Fixed rate for LandingAI
+                "total_credits": total_pages * 3,
+            },
         )

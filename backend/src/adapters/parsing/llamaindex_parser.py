@@ -13,16 +13,23 @@ from .base import BaseParseAdapter, PageResult, ParseResult
 class LlamaIndexParser(BaseParseAdapter):
     """Parser using LlamaIndex's LlamaParse API."""
 
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str, parse_mode: str = "parse_page_with_agent", model: str = "openai-gpt-4-1-mini"):
         """
         Initialize LlamaIndex parser.
 
         Args:
-            api_key: API key for LlamaParse. If None, reads from LLAMAINDEX_API_KEY env var.
+            api_key: API key for LlamaParse (required).
+            parse_mode: Parsing mode (default: "parse_page_with_agent")
+            model: Model to use (default: "openai-gpt-4-1-mini")
+
+        Raises:
+            ValueError: If api_key is empty or None.
         """
-        self.api_key = api_key or os.getenv("LLAMAINDEX_API_KEY")
-        if not self.api_key:
-            raise ValueError("LlamaIndex API key not provided")
+        if not api_key:
+            raise ValueError("LlamaIndex API key is required")
+        self.api_key = api_key
+        self.parse_mode = parse_mode
+        self.model = model
 
     async def parse_pdf(self, pdf_path: Path) -> ParseResult:
         """
@@ -39,8 +46,8 @@ class LlamaIndexParser(BaseParseAdapter):
         # Initialize parser with optimal settings for markdown output
         parser = LlamaParse(
             api_key=self.api_key,
-            parse_mode="parse_page_with_agent",  # Best for structured content
-            model="openai-gpt-4-1-mini",
+            parse_mode=self.parse_mode,
+            model=self.model,
             high_res_ocr=True,  # Better quality for tables/figures
             adaptive_long_table=True,  # Handle long tables spanning pages
             outlined_table_extraction=True,  # Preserve table structure
@@ -119,4 +126,9 @@ class LlamaIndexParser(BaseParseAdapter):
                 "total_pages": len(pages),
             },
             processing_time=processing_time,
+            usage={
+                "parse_mode": self.parse_mode,
+                "model": self.model,
+                "num_pages": len(pages),
+            },
         )

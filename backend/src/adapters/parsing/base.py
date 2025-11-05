@@ -25,6 +25,7 @@ class ParseResult:
     pages: List[PageResult]
     raw_response: Dict[str, Any]
     processing_time: float
+    usage: Dict[str, Any] = field(default_factory=dict)  # Credits, model info, etc.
 
 
 class BaseParseAdapter(ABC):

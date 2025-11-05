@@ -2,11 +2,17 @@
 
 import { useState } from "react";
 import { FileUploadZone } from "@/components/parse/FileUploadZone";
+import { ApiKeyForm } from "@/components/parse/ApiKeyForm";
 import { PDFViewer } from "@/components/parse/PDFViewer";
 import { MarkdownViewer } from "@/components/parse/MarkdownViewer";
+import { CostDisplay } from "@/components/parse/CostDisplay";
+import { ProcessingTimeDisplay } from "@/components/parse/ProcessingTimeDisplay";
 import { PageNavigator } from "@/components/parse/PageNavigator";
+import { ProviderLabel } from "@/components/providers/ProviderLabel";
 import { Button } from "@/components/ui/button";
 import { FileText, Loader2 } from "lucide-react";
+import { apiClient } from "@/lib/api-client";
+import { getProviderDisplayName } from "@/lib/providerMetadata";
 
 interface PageData {
   page_number: number;
@@ -19,45 +25,55 @@ interface ProviderResult {
   total_pages: number;
   pages: PageData[];
   processing_time: number;
+  usage: Record<string, any>;
 }
 
 interface ParseResults {
-  llamaindex?: ProviderResult;
-  reducto?: ProviderResult;
-  landingai?: ProviderResult;
+  [provider: string]: ProviderResult;
+}
+
+interface CostData {
+  provider: string;
+  credits: number;
+  usd_per_credit: number;
+  total_usd: number;
+  details: Record<string, any>;
+}
+
+interface CostResults {
+  [provider: string]: CostData;
+}
+
+interface ApiKeys {
+  llamaindex?: string;
+  reducto?: string;
+  landingai?: string;
 }
 
 export default function ParsePage() {
+  const [apiKeys, setApiKeys] = useState<ApiKeys>({});
+  const [hasApiKeys, setHasApiKeys] = useState(false);
   const [fileId, setFileId] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>("");
   const [parseResults, setParseResults] = useState<ParseResults | null>(null);
+  const [costResults, setCostResults] = useState<CostResults | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const handleKeysChange = (keys: ApiKeys, hasAtLeastOne: boolean) => {
+    setApiKeys(keys);
+    setHasApiKeys(hasAtLeastOne);
+  };
 
   const handleUpload = async (file: File) => {
     setIsUploading(true);
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch(`${apiUrl}/api/v1/parse/upload`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Upload failed");
-      }
-
-      const data = await response.json();
+      const data = await apiClient.uploadPdf(file);
       setFileId(data.file_id);
       setFileName(data.filename);
 
@@ -76,33 +92,30 @@ export default function ParsePage() {
     setError(null);
 
     try {
-      const response = await fetch(`${apiUrl}/api/v1/parse/compare`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          file_id: fid,
-          providers: ["llamaindex", "reducto", "landingai"],
-        }),
+      // Filter out empty keys and pass to API
+      const validKeys: Record<string, string> = {};
+      Object.entries(apiKeys).forEach(([provider, key]) => {
+        if (key && key.trim()) {
+          validKeys[provider] = key;
+        }
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Parsing failed");
-      }
-
-      const data = await response.json();
+      const data = await apiClient.compareParses(fid, validKeys);
       setParseResults(data.results);
 
       // Set total pages from first available provider
-      const pages =
-        data.results.llamaindex?.total_pages ||
-        data.results.reducto?.total_pages ||
-        data.results.landingai?.total_pages ||
-        0;
-      setTotalPages(pages);
+      const firstProvider = Object.values(data.results)[0];
+      setTotalPages(firstProvider?.total_pages || 0);
       setCurrentPage(1);
+
+      // Calculate costs
+      try {
+        const costData = await apiClient.calculateParseCost(data);
+        setCostResults(costData.costs);
+      } catch (costErr) {
+        console.error("Cost calculation error:", costErr);
+        // Don't fail the entire parse if cost calculation fails
+      }
     } catch (err) {
       console.error("Parse error:", err);
       setError(err instanceof Error ? err.message : "Failed to parse PDF");
@@ -115,34 +128,23 @@ export default function ParsePage() {
     setFileId(null);
     setFileName("");
     setParseResults(null);
+    setCostResults(null);
     setCurrentPage(1);
     setTotalPages(0);
     setError(null);
   };
 
-  const getLlamaIndexMarkdown = () => {
-    if (!parseResults?.llamaindex) return undefined;
-    const page = parseResults.llamaindex.pages.find(
+  // Get markdown for a specific provider and page
+  const getProviderMarkdown = (provider: string) => {
+    if (!parseResults?.[provider]) return undefined;
+    const page = parseResults[provider].pages.find(
       (p) => p.page_number === currentPage
     );
     return page?.markdown;
   };
 
-  const getReductoMarkdown = () => {
-    if (!parseResults?.reducto) return undefined;
-    const page = parseResults.reducto.pages.find(
-      (p) => p.page_number === currentPage
-    );
-    return page?.markdown;
-  };
-
-  const getLandingAIMarkdown = () => {
-    if (!parseResults?.landingai) return undefined;
-    const page = parseResults.landingai.pages.find(
-      (p) => p.page_number === currentPage
-    );
-    return page?.markdown;
-  };
+  // Get list of providers that were run (have results)
+  const runProviders = parseResults ? Object.keys(parseResults) : [];
 
   return (
     <div className="container mx-auto p-6 max-w-full px-8">
@@ -159,9 +161,19 @@ export default function ParsePage() {
         </div>
       )}
 
+      {/* API Key Form - Always visible at top */}
+      <div className="mb-6 max-w-2xl mx-auto">
+        <ApiKeyForm onKeysChange={handleKeysChange} disabled={isUploading || isParsing} />
+      </div>
+
       {!fileId ? (
         <div className="max-w-2xl mx-auto">
-          <FileUploadZone onUpload={handleUpload} />
+          <FileUploadZone onUpload={handleUpload} disabled={!hasApiKeys} />
+          {!hasApiKeys && (
+            <p className="mt-4 text-center text-sm text-gray-500">
+              Please provide at least one API key above to enable upload
+            </p>
+          )}
           {isUploading && (
             <div className="mt-4 text-center text-gray-600 flex items-center justify-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -215,28 +227,47 @@ export default function ParsePage() {
                 />
               )}
 
-              {/* Provider Comparison (Lower Section - Three Columns with Responsive Stacking) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <MarkdownViewer
-                  title="LlamaIndex"
-                  markdown={getLlamaIndexMarkdown()}
-                />
-                <MarkdownViewer
-                  title="Reducto"
-                  markdown={getReductoMarkdown()}
-                />
-                <MarkdownViewer
-                  title="LandingAI"
-                  markdown={getLandingAIMarkdown()}
-                />
-              </div>
+              {/* Provider Comparison - Dynamic columns based on number of providers */}
+              <div
+                className={`grid gap-8 ${
+                  runProviders.length === 1
+                    ? "grid-cols-1 max-w-4xl mx-auto"
+                    : runProviders.length === 2
+                    ? "grid-cols-1 md:grid-cols-2"
+                    : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+                }`}
+              >
+                {runProviders.map((provider) => (
+                  <div key={provider} className="space-y-4">
+                    <MarkdownViewer
+                      title={
+                        <ProviderLabel
+                          provider={provider}
+                          size={26}
+                          className="gap-2"
+                        />
+                      }
+                      markdown={getProviderMarkdown(provider)}
+                    />
 
-              {/* Processing Time Info */}
-              <div className="text-sm text-gray-500 text-center">
-                Processing times: LlamaIndex{" "}
-                {parseResults.llamaindex?.processing_time.toFixed(2)}s |
-                Reducto {parseResults.reducto?.processing_time.toFixed(2)}s |
-                LandingAI {parseResults.landingai?.processing_time.toFixed(2)}s
+                    {/* Info Cards Grid */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Processing Time Card */}
+                      <ProcessingTimeDisplay
+                        processingTime={parseResults[provider]?.processing_time || 0}
+                        providerName={getProviderDisplayName(provider)}
+                      />
+
+                      {/* Cost Card */}
+                      {costResults && costResults[provider] && (
+                        <CostDisplay
+                          cost={costResults[provider]}
+                          providerName={getProviderDisplayName(provider)}
+                        />
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </>
           ) : null}
