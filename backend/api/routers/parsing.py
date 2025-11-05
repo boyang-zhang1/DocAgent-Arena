@@ -36,9 +36,9 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 def get_pricing_config_path() -> Path:
     """Find pricing config file in various possible locations."""
     possible_paths = [
-        Path(__file__).parent.parent.parent / "config" / "parsing_pricing.yaml",  # Relative to this file
-        Path("backend/config/parsing_pricing.yaml"),  # Relative to project root
-        Path("config/parsing_pricing.yaml"),  # Relative to backend dir if run from there
+        Path(__file__).parent.parent.parent / "config" / "parsing_pricing.yaml",  # /app/backend/config/
+        Path("config/parsing_pricing.yaml"),  # If running from backend dir
+        Path("backend/config/parsing_pricing.yaml"),  # If running from project root
     ]
 
     for path in possible_paths:
