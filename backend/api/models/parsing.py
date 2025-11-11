@@ -2,7 +2,8 @@
 Request and response models for parsing API endpoints.
 """
 
-from typing import List, Dict, Any
+from enum import Enum
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
 
@@ -59,6 +60,20 @@ class LandingAIConfig(BaseModel):
     )
 
 
+class BattleAssignment(BaseModel):
+    """Mapping between a blind label and the actual provider."""
+
+    label: str
+    provider: str
+
+
+class BattleMetadata(BaseModel):
+    """Battle-specific metadata returned with parse results."""
+
+    battle_id: str
+    assignments: List[BattleAssignment]
+
+
 class ParseCompareRequest(BaseModel):
     """
     Request model for comparing PDF parsing across providers.
@@ -75,13 +90,21 @@ class ParseCompareRequest(BaseModel):
     """
 
     file_id: str = Field(..., description="UUID of uploaded file")
-    providers: List[str] = Field(
-        default=["llamaindex", "reducto"],
-        description="List of parser providers to compare",
+    providers: Optional[List[str]] = Field(
+        default=None,
+        description="List of parser providers to compare. Empty or omitted triggers battle mode.",
     )
     configs: Dict[str, Dict[str, Any]] = Field(
-        default={},
+        default_factory=dict,
         description="Optional configurations for each provider"
+    )
+    page_number: Optional[int] = Field(
+        default=None,
+        description="Specific page to parse (1-indexed). Required for battle mode.",
+    )
+    filename: Optional[str] = Field(
+        default=None,
+        description="Original filename to help audit stored uploads",
     )
 
     class Config:
@@ -92,7 +115,9 @@ class ParseCompareRequest(BaseModel):
                 "configs": {
                     "llamaindex": {"parse_mode": "parse_page_with_agent", "model": "openai-gpt-4-1-mini"},
                     "reducto": {"mode": "standard", "summarize_figures": False}
-                }
+                },
+                "page_number": 3,
+                "filename": "document.pdf"
             }
         }
 
@@ -178,6 +203,10 @@ class ParseCompareResponse(BaseModel):
     results: Dict[str, ProviderParseResult] = Field(
         ..., description="Parsing results keyed by provider name"
     )
+    battle: Optional[BattleMetadata] = Field(
+        default=None,
+        description="Battle-specific metadata when providers were chosen automatically",
+    )
 
     class Config:
         json_schema_extra = {
@@ -199,3 +228,36 @@ class ParseCompareResponse(BaseModel):
                 },
             }
         }
+
+
+class BattlePreference(str, Enum):
+    """Possible user selections for battle outcomes."""
+
+    A_BETTER = "A_BETTER"
+    B_BETTER = "B_BETTER"
+    BOTH_GOOD = "BOTH_GOOD"
+    BOTH_BAD = "BOTH_BAD"
+
+
+class BattleFeedbackRequest(BaseModel):
+    """User feedback payload for a completed battle."""
+
+    battle_id: str = Field(..., description="Identifier returned from battle parse")
+    preference: Optional[BattlePreference] = Field(
+        default=None,
+        description="Which side performed better (deprecated once preferred_labels is provided)",
+    )
+    preferred_labels: Optional[List[str]] = Field(
+        default=None,
+        description="List of blind labels rated as better (e.g., ['A'])",
+    )
+    comment: Optional[str] = Field(default=None, description="Optional rationale")
+
+
+class BattleFeedbackResponse(BaseModel):
+    """API response after storing battle feedback."""
+
+    battle_id: str
+    preferred_labels: List[str]
+    comment: Optional[str]
+    assignments: List[BattleAssignment]

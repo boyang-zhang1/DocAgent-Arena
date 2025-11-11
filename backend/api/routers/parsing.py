@@ -1,17 +1,19 @@
-"""
-API endpoints for PDF parsing and comparison.
-"""
+"""API endpoints for PDF parsing and comparison."""
 
 import asyncio
+import logging
 import os
+import random
 import uuid
 import yaml
+from datetime import datetime
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pypdf import PdfReader
+from prisma import Prisma
+from pypdf import PdfReader, PdfWriter
 
 from api.models.parsing import (
     ParseCompareRequest,
@@ -23,16 +25,208 @@ from api.models.parsing import (
     CostComparisonResponse,
     PageCountRequest,
     PageCountResponse,
+    BattleFeedbackRequest,
+    BattleFeedbackResponse,
+    BattlePreference,
+    BattleMetadata,
+    BattleAssignment,
 )
+from api.db import get_db
+from api.services.storage import SupabaseStorageService
 from src.adapters.parsing.llamaindex_parser import LlamaIndexParser
 from src.adapters.parsing.reducto_parser import ReductoParser
 from src.adapters.parsing.landingai_parser import LandingAIParser
+from src.adapters.parsing.base import ParseResult
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/parse", tags=["parsing"])
 
 # Temporary storage directory for uploaded PDFs
 TEMP_DIR = Path("data/temp")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
+
+DEFAULT_BATTLE_PROVIDERS = ["llamaindex", "reducto"]
+BATTLE_LABELS = ["A", "B", "C", "D"]
+BATTLE_STORAGE_PREFIX = "user-upload"
+
+
+def _extract_single_page(pdf_path: Path, page_number: int) -> Path:
+    """Create a temporary PDF containing only the selected page."""
+    reader = PdfReader(pdf_path)
+    total_pages = len(reader.pages)
+    if page_number < 1 or page_number > total_pages:
+        raise ValueError(f"Page {page_number} is out of range. PDF has {total_pages} pages.")
+
+    writer = PdfWriter()
+    writer.add_page(reader.pages[page_number - 1])
+
+    output_path = TEMP_DIR / f"{pdf_path.stem}_page_{page_number}_{uuid.uuid4().hex}.pdf"
+    with open(output_path, "wb") as f:
+        writer.write(f)
+
+    return output_path
+
+
+def _prepare_battle_assignments(providers: List[str]) -> (List[BattleAssignment], Dict[str, str]):
+    """Shuffle providers and assign blind labels."""
+    shuffled = providers[:]
+    random.shuffle(shuffled)
+    assignments: List[BattleAssignment] = []
+    provider_to_label: Dict[str, str] = {}
+
+    for idx, provider in enumerate(shuffled):
+        if idx >= len(BATTLE_LABELS):
+            break
+        label = BATTLE_LABELS[idx]
+        assignments.append(BattleAssignment(label=label, provider=provider))
+        provider_to_label[provider] = label
+
+    return assignments, provider_to_label
+
+
+async def _persist_battle_run(
+    prisma_client: Prisma,
+    *,
+    battle_id: str,
+    upload_file_id: str,
+    original_name: str,
+    storage_input_path: Path,
+    page_number: int,
+    providers: List[str],
+    provider_to_label: Dict[str, str],
+    assignments: List[BattleAssignment],
+    parse_results: List[ParseResult],
+    configs: Dict[str, Dict[str, Any]],
+):
+    """Upload battle artifacts and persist run/results asynchronously."""
+
+    if prisma_client is None:
+        logger.warning("Prisma client unavailable; skipping battle persistence")
+        return
+
+    storage_url: Optional[str] = None
+    storage_path = f"{BATTLE_STORAGE_PREFIX}/{battle_id}.pdf"
+
+    try:
+        storage_service = SupabaseStorageService()
+        storage_url = storage_service.upload(str(storage_input_path), storage_path)
+    except Exception as exc:
+        logger.warning("Unable to upload battle PDF to Supabase: %s", exc)
+        storage_path = str(storage_input_path)
+
+    try:
+        pricing_config = load_pricing_config()
+    except Exception as exc:
+        logger.debug("Pricing config unavailable for battle persistence: %s", exc)
+        pricing_config = None
+
+    provider_entries = []
+    has_success = False
+
+    for result in parse_results:
+        usage = result.usage or {}
+        cost_credits = None
+        cost_usd = None
+
+        if pricing_config:
+            try:
+                provider_cost = calculate_provider_cost(result.provider, usage, pricing_config)
+                cost_credits = provider_cost.credits
+                cost_usd = provider_cost.total_usd
+            except Exception as exc:
+                logger.debug("Cost calculation failed for %s: %s", result.provider, exc)
+
+        pages_payload = [
+            {
+                "page_number": page.page_number,
+                "markdown": page.markdown,
+                "images": page.images,
+                "metadata": page.metadata,
+            }
+            for page in result.pages
+        ]
+        if pages_payload:
+            has_success = True
+
+        provider_entries.append(
+            {
+                "provider": result.provider,
+                "label": provider_to_label.get(result.provider, result.provider),
+                "content": {"pages": pages_payload},
+                "totalPages": result.total_pages,
+                "usage": usage,
+                "costCredits": cost_credits,
+                "costUsd": cost_usd,
+                "processingTime": result.processing_time,
+            }
+        )
+
+    status = "SUCCESS" if has_success else "ERROR"
+
+    metadata = {
+        "configs": configs,
+        "provider_labels": provider_to_label,
+        "label_providers": {assignment.label: assignment.provider for assignment in assignments},
+        "assignments": [assignment.model_dump() for assignment in assignments],
+        "battle_mode": True,
+    }
+
+    try:
+        await prisma_client.parsebattlerun.create(
+            data={
+                "id": battle_id,
+                "uploadFileId": upload_file_id,
+                "originalName": original_name,
+                "storagePath": storage_path,
+                "storageUrl": storage_url,
+                "pageNumber": page_number,
+                "providers": providers,
+                "status": status,
+                "metadata": metadata,
+                "providerResults": {"create": provider_entries},
+            }
+        )
+    except Exception as exc:
+        logger.error("Failed to persist battle run %s: %s", battle_id, exc)
+
+
+def _normalize_preferred_labels(
+    *,
+    preference: Optional[BattlePreference],
+    explicit_labels: Optional[List[str]],
+    available_labels: List[str],
+) -> List[str]:
+    """Resolve preferred labels from either request payload or enum selection."""
+    if explicit_labels is not None:
+        normalized = []
+        for label in explicit_labels:
+            if label not in available_labels:
+                raise HTTPException(status_code=400, detail=f"Invalid label '{label}' for this battle")
+            if label not in normalized:
+                normalized.append(label)
+        return normalized
+
+    if preference is None:
+        raise HTTPException(status_code=400, detail="Provide either preferred_labels or preference")
+
+    if preference == BattlePreference.A_BETTER:
+        if not available_labels:
+            raise HTTPException(status_code=400, detail="No providers available for battle")
+        return [available_labels[0]]
+
+    if preference == BattlePreference.B_BETTER:
+        if len(available_labels) < 2:
+            raise HTTPException(status_code=400, detail="Battle missing second provider")
+        return [available_labels[1]]
+
+    if preference == BattlePreference.BOTH_GOOD:
+        return available_labels
+
+    if preference == BattlePreference.BOTH_BAD:
+        return []
+
+    raise HTTPException(status_code=400, detail="Unsupported preference value")
 
 
 @router.get("/available-providers")
@@ -263,7 +457,7 @@ async def get_page_count(request: PageCountRequest):
 
 
 @router.post("/compare", response_model=ParseCompareResponse)
-async def compare_parsers(request: ParseCompareRequest):
+async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get_db)):
     """
     Compare PDF parsing across multiple providers.
 
@@ -284,11 +478,28 @@ async def compare_parsers(request: ParseCompareRequest):
             detail=f"File not found: {request.file_id}. Please upload the file first.",
         )
 
+    # Determine providers
+    requested_providers = request.providers or []
+    battle_mode = len(requested_providers) == 0
+    providers = requested_providers or DEFAULT_BATTLE_PROVIDERS.copy()
+    providers = list(dict.fromkeys(providers))  # Deduplicate while preserving order
+
+    if battle_mode and request.page_number is None:
+        raise HTTPException(status_code=400, detail="Battle mode requires a specific page selection.")
+
+    # Extract a single page if requested
+    selected_pdf_path = pdf_path
+    if request.page_number is not None:
+        try:
+            selected_pdf_path = _extract_single_page(pdf_path, request.page_number)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     # Initialize parsers with backend environment API keys and configurations
     parsers: Dict[str, any] = {}
 
     try:
-        if "llamaindex" in request.providers:
+        if "llamaindex" in providers:
             # Get LlamaIndex config or use defaults
             config = request.configs.get("llamaindex", {})
             parse_mode = config.get("parse_mode", "parse_page_with_agent")
@@ -305,7 +516,7 @@ async def compare_parsers(request: ParseCompareRequest):
                 model=model
             )
 
-        if "reducto" in request.providers:
+        if "reducto" in providers:
             # Get Reducto config or use defaults
             config = request.configs.get("reducto", {})
             summarize_figures = config.get("summarize_figures", False)
@@ -323,7 +534,7 @@ async def compare_parsers(request: ParseCompareRequest):
                 summarize_figures=summarize_figures
             )
 
-        if "landingai" in request.providers:
+        if "landingai" in providers:
             # Get API key from environment
             api_key = os.getenv("VISION_AGENT_API_KEY")
             if not api_key:
@@ -339,7 +550,10 @@ async def compare_parsers(request: ParseCompareRequest):
         )
 
     # Parse with all providers in parallel
-    parse_tasks = [parser.parse_pdf(pdf_path) for parser in parsers.values()]
+    if not parsers:
+        raise HTTPException(status_code=400, detail="No valid providers available for parsing.")
+
+    parse_tasks = [parser.parse_pdf(selected_pdf_path) for parser in parsers.values()]
 
     try:
         parse_results = await asyncio.gather(*parse_tasks)
@@ -367,7 +581,106 @@ async def compare_parsers(request: ParseCompareRequest):
         )
         results[parse_result.provider] = provider_result
 
-    return ParseCompareResponse(file_id=request.file_id, results=results)
+    battle_metadata: Optional[BattleMetadata] = None
+    if battle_mode:
+        battle_id = str(uuid.uuid4())
+        assignments, provider_to_label = _prepare_battle_assignments(providers)
+        battle_metadata = BattleMetadata(
+            battle_id=battle_id,
+            assignments=assignments,
+        )
+
+        # Fire-and-forget persistence so the response is not blocked
+        asyncio.create_task(
+            _persist_battle_run(
+                prisma_client=db,
+                battle_id=battle_id,
+                upload_file_id=request.file_id,
+                original_name=request.filename or f"{request.file_id}.pdf",
+                storage_input_path=selected_pdf_path,
+                page_number=request.page_number or 1,
+                providers=providers,
+                provider_to_label=provider_to_label,
+                assignments=assignments,
+                parse_results=parse_results,
+                configs=request.configs,
+            )
+        )
+
+    return ParseCompareResponse(file_id=request.file_id, results=results, battle=battle_metadata)
+
+
+@router.post("/battle-feedback", response_model=BattleFeedbackResponse)
+async def submit_battle_feedback(request: BattleFeedbackRequest, db: Prisma = Depends(get_db)):
+    """Persist user selection for a completed battle."""
+
+    if db is None:
+        raise HTTPException(status_code=500, detail="Database unavailable")
+
+    battle = await db.parsebattlerun.find_unique(
+        where={"id": request.battle_id}
+    )
+
+    if not battle:
+        raise HTTPException(status_code=404, detail="Battle run not found")
+
+    metadata = battle.metadata or {}
+    assignments_raw = metadata.get("assignments") or []
+    assignments: List[BattleAssignment] = []
+
+    for entry in assignments_raw:
+        try:
+            assignments.append(BattleAssignment(**entry))
+        except Exception:
+            continue
+
+    if not assignments:
+        label_map = metadata.get("label_providers") or {}
+        if isinstance(label_map, dict):
+            for label, provider in label_map.items():
+                assignments.append(BattleAssignment(label=label, provider=provider))
+
+    if not assignments:
+        provider_labels = metadata.get("provider_labels") or {}
+        for provider, label in provider_labels.items():
+            assignments.append(BattleAssignment(label=label, provider=provider))
+
+    assignments.sort(key=lambda assignment: assignment.label)
+    available_labels = [assignment.label for assignment in assignments]
+
+    preferred_labels = _normalize_preferred_labels(
+        preference=request.preference,
+        explicit_labels=request.preferred_labels,
+        available_labels=available_labels,
+    )
+
+    feedback_data = {
+        "preferredLabels": preferred_labels,
+        "comment": request.comment,
+        "revealedAt": datetime.utcnow(),
+    }
+
+    existing = await db.battlefeedback.find_unique(where={"battleId": request.battle_id})
+
+    if existing:
+        record = await db.battlefeedback.update(
+            where={"battleId": request.battle_id},
+            data=feedback_data,
+        )
+    else:
+        record = await db.battlefeedback.create(
+            data={
+                "battleId": request.battle_id,
+                **feedback_data,
+            }
+        )
+
+    return BattleFeedbackResponse(
+        battle_id=request.battle_id,
+        preferred_labels=record.preferredLabels,
+        comment=record.comment,
+        assignments=assignments,
+    )
 
 
 @router.get("/file/{file_id}")
