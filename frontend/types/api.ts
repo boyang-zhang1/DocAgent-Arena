@@ -136,17 +136,19 @@ export interface ProviderDetailResponse {
 // PDF Parsing Types
 
 export interface LlamaIndexConfig {
-  parse_mode: string;
-  model: string;
+  mode: string;
+  parse_mode?: string;
+  model?: string;
 }
 
 export interface ReductoConfig {
-  mode: string;  // "standard" or "complex"
-  summarize_figures: boolean;
+  mode: string;
+  summarize_figures?: boolean;
 }
 
 export interface LandingAIConfig {
-  model: string;  // Currently only "dpt-2"
+  mode: string;
+  model?: string;
 }
 
 export type ProviderConfig = LlamaIndexConfig | ReductoConfig | LandingAIConfig;
@@ -241,6 +243,7 @@ export interface ModelOption {
   credits_per_page: number;
   usd_per_page: number;
   description?: string;
+  config: Record<string, any>;
 }
 
 export interface ProviderPricingInfo {

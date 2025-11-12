@@ -1,51 +1,16 @@
-import { LlamaIndexConfig, ReductoConfig } from "@/types/api";
+import type {
+  LlamaIndexConfig,
+  ReductoConfig,
+  ModelOption,
+  ProviderPricingInfo,
+} from "@/types/api";
 
-export interface ModelOption {
-  value: string;
-  label: string;
-  description: string;
-  credits: number;
-}
-
-export const LLAMAINDEX_MODELS: ModelOption[] = [
-  {
-    value: "parse_page_with_llm:default",
-    label: "Cost-effective",
-    description: "3 credits/page ($0.003/page)",
-    credits: 3,
-  },
-  {
-    value: "parse_page_with_agent:openai-gpt-4-1-mini",
-    label: "Agentic",
-    description: "10 credits/page ($0.010/page)",
-    credits: 10,
-  },
-  {
-    value: "parse_page_with_agent:anthropic-sonnet-4.0",
-    label: "Agentic Plus",
-    description: "90 credits/page ($0.090/page)",
-    credits: 90,
-  },
-];
-
-export const REDUCTO_MODELS: ModelOption[] = [
-  {
-    value: "standard",
-    label: "Standard",
-    description: "1 credit/page ($0.015/page)",
-    credits: 1,
-  },
-  {
-    value: "complex",
-    label: "Complex VLM",
-    description: "2 credits/page ($0.030/page)",
-    credits: 2,
-  },
-];
+export type ProviderPricingMap = Record<string, ProviderPricingInfo>;
 
 export function getDefaultBattleConfigs() {
   return {
     llamaindex: {
+      mode: "agentic",
       parse_mode: "parse_page_with_agent",
       model: "openai-gpt-4-1-mini",
     } as LlamaIndexConfig,
@@ -56,46 +21,62 @@ export function getDefaultBattleConfigs() {
   };
 }
 
-export function getLlamaIndexDisplayName(config: LlamaIndexConfig): string {
-  const value = `${config.parse_mode}:${config.model}`;
-  const model = LLAMAINDEX_MODELS.find((m) => m.value === value);
-  return model?.label || "Agentic";
+export function llamaIndexConfigToValue(config?: LlamaIndexConfig): string {
+  return config?.mode || "";
 }
 
-export function getReductoDisplayName(config: ReductoConfig): string {
-  const model = REDUCTO_MODELS.find((m) => m.value === config.mode);
-  return model?.label || "Standard";
+export function reductoConfigToValue(config?: ReductoConfig): string {
+  return config?.mode || "";
 }
 
-export function llamaIndexConfigToValue(config: LlamaIndexConfig): string {
-  return `${config.parse_mode}:${config.model}`;
-}
+const PROVIDER_FALLBACK_LABELS: Record<string, string> = {
+  llamaindex: "Agentic",
+  reducto: "Standard",
+  landingai: "DPT-2",
+};
 
-export function valueToLlamaIndexConfig(value: string): LlamaIndexConfig {
-  const [parse_mode, model] = value.split(":");
-  return { parse_mode, model };
-}
+function matchesConfig(option: ModelOption, config?: Record<string, any>): boolean {
+  if (!config) return false;
+  const optionConfig = option.config || {};
 
-export function reductoConfigToValue(config: ReductoConfig): string {
-  return config.mode;
-}
-
-export function valueToReductoConfig(value: string): ReductoConfig {
-  return {
-    mode: value,
-    summarize_figures: value === "complex",
-  };
-}
-
-export function getModelCredits(provider: string, config: LlamaIndexConfig | ReductoConfig): number {
-  if (provider === "llamaindex") {
-    const value = llamaIndexConfigToValue(config as LlamaIndexConfig);
-    const model = LLAMAINDEX_MODELS.find((m) => m.value === value);
-    return model?.credits || 10;
-  } else if (provider === "reducto") {
-    const value = reductoConfigToValue(config as ReductoConfig);
-    const model = REDUCTO_MODELS.find((m) => m.value === value);
-    return model?.credits || 1;
+  if (optionConfig.mode && config.mode && optionConfig.mode === config.mode) {
+    return true;
   }
-  return 0;
+
+  return Object.entries(optionConfig).every(([key, value]) => {
+    if (key === "mode") {
+      return !config.mode || config.mode === value;
+    }
+    return config[key] === value;
+  });
+}
+
+export function getModelOptionForConfig(
+  provider: string,
+  config: Record<string, any> | undefined,
+  pricingMap?: ProviderPricingMap | null
+): ModelOption | undefined {
+  if (!pricingMap || !config) return undefined;
+  const providerInfo = pricingMap[provider];
+  if (!providerInfo) return undefined;
+  return providerInfo.models.find((option) => matchesConfig(option, config));
+}
+
+export function getModelOptionByLabel(
+  provider: string,
+  label: string,
+  pricingMap?: ProviderPricingMap | null
+): ModelOption | undefined {
+  if (!pricingMap) return undefined;
+  const providerInfo = pricingMap[provider];
+  if (!providerInfo) return undefined;
+  return providerInfo.models.find((option) => option.label === label);
+}
+
+export function formatOptionDescription(option: ModelOption): string {
+  return `${option.label} - ${option.credits_per_page} credits/page ($${option.usd_per_page.toFixed(3)}/page)`;
+}
+
+export function getFallbackLabel(provider: string): string {
+  return PROVIDER_FALLBACK_LABELS[provider] || provider;
 }

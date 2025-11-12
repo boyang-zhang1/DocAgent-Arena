@@ -34,6 +34,8 @@ from api.models.parsing import (
     BattleHistoryResponse,
     BattleProviderDetail,
     BattleDetailResponse,
+    ProviderPricingInfo,
+    PricingModelOption,
 )
 from api.db import get_db
 from api.services.storage import SupabaseStorageService
@@ -51,6 +53,11 @@ TEMP_DIR = Path("data/temp")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_BATTLE_PROVIDERS = ["llamaindex", "reducto"]
+DEFAULT_PROVIDER_CONFIGS: Dict[str, Dict[str, Any]] = {
+    "llamaindex": {"mode": "agentic"},
+    "reducto": {"mode": "standard"},
+    "landingai": {"mode": "dpt-2"},
+}
 BATTLE_LABELS = ["A", "B", "C", "D"]
 BATTLE_STORAGE_PREFIX = "user-upload"
 PENDING_BATTLE_TASKS: Dict[str, asyncio.Task] = {}
@@ -246,6 +253,17 @@ async def get_available_providers():
     """
     return ["llamaindex", "reducto", "landingai"]
 
+
+@router.get("/pricing", response_model=List[ProviderPricingInfo])
+async def get_provider_pricing():
+    """Expose provider pricing metadata for frontend consumption."""
+    try:
+        pricing_config = load_pricing_config()
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return build_pricing_metadata(pricing_config)
+
 # Pricing configuration path
 # Try multiple possible locations
 def get_pricing_config_path() -> Path:
@@ -277,6 +295,126 @@ def load_pricing_config() -> Dict:
         raise ValueError(f"Failed to load pricing config from {PRICING_CONFIG_PATH.absolute()}: {str(e)}")
 
 
+def build_pricing_metadata(pricing_config: Dict[str, Any]) -> List[ProviderPricingInfo]:
+    """Convert raw pricing config into API-friendly structures."""
+    provider_infos: List[ProviderPricingInfo] = []
+
+    for provider, provider_config in pricing_config.items():
+        usd_per_credit = provider_config.get("usd_per_credit", 0.0)
+        raw_models = provider_config.get("models") or []
+
+        models: List[PricingModelOption] = []
+        for entry in raw_models:
+            credits_per_page = entry.get("credits_per_page")
+            mode = entry.get("mode")
+            if credits_per_page is None or not mode:
+                continue
+
+            api_params = entry.get("api") or {}
+            option_config = {"mode": mode, **api_params}
+            label = entry.get("label") or mode.replace("-", " ").title()
+            description = entry.get("description")
+
+            models.append(
+                PricingModelOption(
+                    label=label,
+                    value=mode,
+                    credits_per_page=credits_per_page,
+                    usd_per_page=credits_per_page * usd_per_credit,
+                    description=description,
+                    config=option_config,
+                )
+            )
+
+        provider_infos.append(
+            ProviderPricingInfo(
+                provider=provider,
+                usd_per_credit=usd_per_credit,
+                models=models,
+            )
+        )
+
+    return provider_infos
+
+
+def _get_source_value(source: Optional[Dict[str, Any]], key: str) -> Any:
+    if not isinstance(source, dict):
+        return None
+    if key in source:
+        return source[key]
+    nested = source.get("config")
+    if isinstance(nested, dict) and key in nested:
+        return nested[key]
+    return None
+
+
+def _entry_matches(entry: Dict[str, Any], source: Optional[Dict[str, Any]]) -> bool:
+    if not source:
+        return False
+    api_params = entry.get("api") or {}
+    for key, value in api_params.items():
+        if _get_source_value(source, key) != value:
+            return False
+    return True
+
+
+def _select_pricing_entry(
+    provider: str,
+    provider_config: Dict[str, Any],
+    *,
+    mode: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+    usage: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    models = provider_config.get("models") or []
+    if not models:
+        return None
+
+    if mode:
+        for entry in models:
+            if entry.get("mode") == mode:
+                return entry
+
+    if config:
+        for entry in models:
+            if _entry_matches(entry, config):
+                return entry
+
+    if usage:
+        for entry in models:
+            if _entry_matches(entry, usage):
+                return entry
+
+    return models[0]
+
+
+def _resolved_config_from_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    api_params = entry.get("api") or {}
+    resolved = {"mode": entry.get("mode")}
+    resolved.update(api_params)
+    return resolved
+
+
+def _resolve_provider_config(
+    provider: str,
+    user_config: Optional[Dict[str, Any]],
+    pricing_config: Dict[str, Any]
+) -> Dict[str, Any]:
+    provider_pricing = pricing_config.get(provider)
+    if not provider_pricing:
+        raise ValueError(f"No pricing configuration defined for provider '{provider}'")
+
+    mode = None
+    if isinstance(user_config, dict):
+        mode = user_config.get("mode")
+
+    entry = _select_pricing_entry(provider, provider_pricing, mode=mode, config=user_config)
+    if not entry:
+        raise ValueError(f"No models configured for provider '{provider}'")
+
+    return _resolved_config_from_entry(entry)
+
+
 def calculate_provider_cost(provider: str, usage: Dict, pricing_config: Dict) -> ProviderCost:
     """
     Calculate cost for a provider based on usage information.
@@ -292,96 +430,43 @@ def calculate_provider_cost(provider: str, usage: Dict, pricing_config: Dict) ->
     provider_config = pricing_config.get(provider, {})
     usd_per_credit = provider_config.get("usd_per_credit", 0)
 
-    if provider == "llamaindex":
-        # Calculate based on parse_mode + model configuration
-        parse_mode = usage.get("parse_mode", "")
-        model = usage.get("model", "")
-        num_pages = usage.get("num_pages", 0)
+    entry = _select_pricing_entry(
+        provider,
+        provider_config,
+        mode=_get_source_value(usage, "mode"),
+        usage=usage,
+    )
+    if not entry:
+        raise ValueError(f"Pricing configuration missing for provider '{provider}'")
 
-        # Find matching model config
-        models = provider_config.get("models", [])
-        credits_per_page = None
-        for model_config in models:
-            if model_config.get("parse_mode") == parse_mode and model_config.get("model") == model:
-                credits_per_page = model_config.get("credits_per_page")
-                break
+    credits_per_page = entry.get("credits_per_page", 0)
+    num_pages = usage.get("num_pages", 0)
+    total_credits = credits_per_page * num_pages
 
-        if credits_per_page is None:
-            # Default if not found
-            credits_per_page = 10
+    if total_credits == 0:
+        total_credits = usage.get("credits", usage.get("total_credits", 0))
+        if credits_per_page == 0 and num_pages:
+            credits_per_page = total_credits / num_pages
 
-        total_credits = num_pages * credits_per_page
-        total_usd = total_credits * usd_per_credit
+    total_usd = total_credits * usd_per_credit
 
-        return ProviderCost(
-            provider=provider,
-            credits=total_credits,
-            usd_per_credit=usd_per_credit,
-            total_usd=total_usd,
-            details={
-                "parse_mode": parse_mode,
-                "model": model,
-                "num_pages": num_pages,
-                "credits_per_page": credits_per_page,
-            }
-        )
+    details = {
+        "mode": entry.get("mode"),
+        "label": entry.get("label"),
+        "num_pages": num_pages,
+        "credits_per_page": credits_per_page,
+    }
+    api_params = entry.get("api") or {}
+    if api_params:
+        details.update(api_params)
 
-    elif provider == "reducto":
-        # Get mode from usage to determine credits per page
-        mode = usage.get("mode", "standard")
-        num_pages = usage.get("num_pages", 0)
-
-        # Look up credits_per_page from pricing config based on mode
-        models = provider_config.get("models", [])
-        credits_per_page = None
-        for model_config in models:
-            if model_config.get("mode") == mode:
-                credits_per_page = model_config.get("credits_per_page")
-                break
-
-        # Fall back to API response credits if config lookup fails
-        if credits_per_page is None:
-            credits = usage.get("credits", 0)
-            credits_per_page = (credits / num_pages) if num_pages > 0 else 1
-            total_credits = credits
-        else:
-            total_credits = num_pages * credits_per_page
-
-        total_usd = total_credits * usd_per_credit
-
-        return ProviderCost(
-            provider=provider,
-            credits=total_credits,
-            usd_per_credit=usd_per_credit,
-            total_usd=total_usd,
-            details={
-                "mode": mode,
-                "num_pages": num_pages,
-                "credits_per_page": credits_per_page,
-                "summarize_figures": usage.get("summarize_figures", False),
-            }
-        )
-
-    elif provider == "landingai":
-        # Fixed rate: 3 credits per page
-        total_credits = usage.get("total_credits", 0)
-        num_pages = usage.get("num_pages", 0)
-        credits_per_page = usage.get("credits_per_page", 3)
-        total_usd = total_credits * usd_per_credit
-
-        return ProviderCost(
-            provider=provider,
-            credits=total_credits,
-            usd_per_credit=usd_per_credit,
-            total_usd=total_usd,
-            details={
-                "num_pages": num_pages,
-                "credits_per_page": credits_per_page,
-            }
-        )
-
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+    return ProviderCost(
+        provider=provider,
+        credits=total_credits,
+        usd_per_credit=usd_per_credit,
+        total_usd=total_usd,
+        details=details,
+    )
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -502,13 +587,30 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    try:
+        pricing_config = load_pricing_config()
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    request_configs = request.configs or {}
+    resolved_configs: Dict[str, Dict[str, Any]] = {}
+
+    for provider in providers:
+        user_config = request_configs.get(provider) or DEFAULT_PROVIDER_CONFIGS.get(provider) or {}
+        try:
+            resolved_config = _resolve_provider_config(provider, user_config, pricing_config)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        resolved_configs[provider] = resolved_config
+
     # Initialize parsers with backend environment API keys and configurations
     parsers: Dict[str, any] = {}
 
     try:
         if "llamaindex" in providers:
-            # Get LlamaIndex config or use defaults
-            config = request.configs.get("llamaindex", {})
+            config = resolved_configs.get("llamaindex")
+            if not config:
+                config = _resolve_provider_config("llamaindex", DEFAULT_PROVIDER_CONFIGS.get("llamaindex"), pricing_config)
             parse_mode = config.get("parse_mode", "parse_page_with_agent")
             model = config.get("model", "openai-gpt-4-1-mini")
 
@@ -524,10 +626,10 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
             )
 
         if "reducto" in providers:
-            # Get Reducto config or use defaults
-            config = request.configs.get("reducto", {})
+            config = resolved_configs.get("reducto")
+            if not config:
+                config = _resolve_provider_config("reducto", DEFAULT_PROVIDER_CONFIGS.get("reducto"), pricing_config)
             summarize_figures = config.get("summarize_figures", False)
-            # Handle mode field (standard/complex) as well
             if "mode" in config:
                 summarize_figures = config["mode"] == "complex"
 
@@ -572,6 +674,14 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
     # Format results
     results = {}
     for parse_result in parse_results:
+        provider_config = resolved_configs.get(parse_result.provider, {})
+        mode = provider_config.get("mode")
+        if mode:
+            usage_payload = parse_result.usage or {}
+            if usage_payload.get("mode") != mode:
+                usage_payload = {**usage_payload, "mode": mode}
+            parse_result.usage = usage_payload
+
         provider_result = ProviderParseResult(
             total_pages=parse_result.total_pages,
             pages=[
@@ -610,7 +720,7 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
                 provider_to_label=provider_to_label,
                 assignments=assignments,
                 parse_results=parse_results,
-                configs=request.configs,
+                configs=resolved_configs,
             )
         )
         PENDING_BATTLE_TASKS[battle_id] = task
@@ -835,25 +945,6 @@ def _jsonify(value: Any) -> Any:
     return str(value)
 
 
-def _get_model_display_name(provider: str, config: Dict[str, Any]) -> str:
-    """Extract user-friendly model display name from provider config."""
-    if provider == "llamaindex":
-        parse_mode = config.get("parse_mode", "")
-        model = config.get("model", "")
-        if "llm" in parse_mode:
-            return "Cost-effective"
-        elif "agent" in parse_mode:
-            if "sonnet" in model:
-                return "Agentic Plus"
-            else:
-                return "Agentic"
-        return "Agentic"  # default
-    elif provider == "reducto":
-        mode = config.get("mode", "standard")
-        if mode == "complex":
-            return "Complex VLM"
-        return "Standard"
-    return provider
 
 
 @router.get("/battles", response_model=BattleHistoryResponse)
@@ -879,6 +970,11 @@ async def get_battle_history(
 
     skip = (page - 1) * limit
 
+    try:
+        pricing_config = load_pricing_config()
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
     # Get total count of battles WITH feedback only
     total = await db.parsebattlerun.count(
         where={
@@ -898,7 +994,10 @@ async def get_battle_history(
         skip=skip,
         take=limit,
         order={"createdAt": "desc"},
-        include={"feedback": True}
+        include={
+            "feedback": True,
+            "providerResults": True,
+        }
     )
 
     items = []
@@ -920,13 +1019,57 @@ async def get_battle_history(
             elif len(preferred_labels) == 0:
                 winner = "none"
 
-        # Extract model display names from metadata
         metadata = battle.metadata or {}
         configs = metadata.get("configs") or {}
-        model_display_names = {}
-        for provider, config in configs.items():
-            if config:
-                model_display_names[provider] = _get_model_display_name(provider, config)
+        if not isinstance(configs, dict):
+            configs = {}
+        configs = {key: (value or {}) for key, value in configs.items()}
+
+        model_display_names: Dict[str, str] = {}
+        provider_results = {result.provider: result for result in (battle.providerResults or [])}
+        metadata_updated = False
+
+        providers = battle.providers or []
+        provider_keys = set(providers)
+        provider_keys.update(configs.keys())
+
+        if not provider_keys:
+            provider_keys.update(DEFAULT_BATTLE_PROVIDERS)
+
+        for provider in provider_keys:
+            provider_pricing = pricing_config.get(provider, {})
+            config_entry = configs.get(provider) or {}
+            usage = None
+            provider_result = provider_results.get(provider)
+            if provider_result and provider_result.usage:
+                usage = provider_result.usage
+
+            entry = _select_pricing_entry(
+                provider,
+                provider_pricing,
+                mode=_get_source_value(config_entry, "mode"),
+                config=config_entry,
+                usage=usage,
+            )
+
+            if entry:
+                model_display_names[provider] = entry.get("label") or entry.get("mode") or provider
+                resolved_config = _resolved_config_from_entry(entry)
+                if configs.get(provider) != resolved_config:
+                    configs[provider] = resolved_config
+                    metadata_updated = True
+            else:
+                model_display_names[provider] = provider
+
+        if metadata_updated:
+            try:
+                metadata = {**metadata, "configs": configs}
+                await db.parsebattlerun.update(
+                    where={"id": battle.id},
+                    data={"metadata": Json(_jsonify(metadata))},
+                )
+            except Exception as exc:
+                logger.debug("Failed to backfill battle configs for %s: %s", battle.id, exc)
 
         items.append(BattleHistoryItem(
             battle_id=battle.id,

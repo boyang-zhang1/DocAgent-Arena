@@ -5,8 +5,14 @@ import { useRouter } from "next/navigation";
 import { History, ChevronLeft, ChevronRight, Trophy, Minus, Users } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import type { BattleHistoryResponse, BattleHistoryItem } from "@/types/api";
+import { ProviderLabel } from "@/components/providers/ProviderLabel";
+import { ProviderPricingMap, getModelOptionByLabel, getFallbackLabel } from "@/lib/modelUtils";
 
-export function BattleHistory() {
+interface BattleHistoryProps {
+  pricing?: ProviderPricingMap | null;
+}
+
+export function BattleHistory({ pricing }: BattleHistoryProps) {
   const router = useRouter();
   const [history, setHistory] = useState<BattleHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,42 +75,62 @@ export function BattleHistory() {
 
     // Show model display name if available, otherwise show provider name
     const modelNames = battle.model_display_names;
-    const displayName = (modelNames && modelNames[winner]) || winner;
+    const displayName = (modelNames && modelNames[winner]) || getFallbackLabel(winner);
     return (
-      <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
-        <Trophy className="h-4 w-4" />
+      <div className="flex items-center gap-1 text-gray-900 dark:text-gray-100">
+        <Trophy className="h-4 w-4 text-green-600 dark:text-green-400" />
         <span className="text-sm font-medium">{displayName}</span>
+        <ProviderLabel provider={winner} size={14} hideName />
       </div>
     );
   };
 
-  const getModelText = (battle: BattleHistoryItem) => {
-    const modelNames = battle.model_display_names;
-    if (!modelNames || Object.keys(modelNames).length === 0) {
-      return "LlamaIndex vs Reducto";
+  const renderModelInfo = (battle: BattleHistoryItem) => {
+    const modelNames = battle.model_display_names || {};
+    const preferredOrder = ["llamaindex", "reducto"];
+
+    const orderedProviders = [
+      ...preferredOrder.filter((provider) => provider in modelNames),
+      ...Object.keys(modelNames).filter((provider) => !preferredOrder.includes(provider)),
+    ];
+
+    if (orderedProviders.length === 0) {
+      orderedProviders.push(...preferredOrder);
     }
 
-    const llamaModel = modelNames.llamaindex || "LlamaIndex";
-    const reductoModel = modelNames.reducto || "Reducto";
+    const entries = orderedProviders.map((provider) => {
+      const label = modelNames[provider] || getFallbackLabel(provider);
+      const option = getModelOptionByLabel(provider, label, pricing);
+      const price = option ? ` ($${option.usd_per_page.toFixed(3)}/page)` : "";
+      return {
+        provider,
+        text: `${label}${price}`,
+      };
+    });
 
-    // Get pricing info based on model names
-    const getLlamaPrice = (name: string) => {
-      if (name === "Cost-effective") return "$0.003/page";
-      if (name === "Agentic") return "$0.010/page";
-      if (name === "Agentic Plus") return "$0.090/page";
-      return "";
-    };
+    const parts = entries.flatMap((entry, index) => {
+      const nodes = [
+        <span key={`${entry.provider}-${index}`} className="inline-flex items-center gap-1">
+          <ProviderLabel provider={entry.provider} size={12} hideName />
+          <span>{entry.text}</span>
+        </span>,
+      ];
 
-    const getReductoPrice = (name: string) => {
-      if (name === "Standard") return "$0.015/page";
-      if (name === "Complex VLM") return "$0.030/page";
-      return "";
-    };
+      if (index < entries.length - 1) {
+        nodes.push(
+          <span
+            key={`vs-${entry.provider}-${index}`}
+            className="text-gray-400 dark:text-gray-500 mx-1"
+          >
+            vs
+          </span>
+        );
+      }
 
-    const llamaPrice = getLlamaPrice(llamaModel);
-    const reductoPrice = getReductoPrice(reductoModel);
+      return nodes;
+    });
 
-    return `${llamaModel}${llamaPrice ? ` (${llamaPrice})` : ""} vs ${reductoModel}${reductoPrice ? ` (${reductoPrice})` : ""}`;
+    return <>{parts}</>;
   };
 
   if (loading && !history) {
@@ -165,9 +191,9 @@ export function BattleHistory() {
                     Page {battle.page_number} • {formatDate(battle.created_at)}
                   </p>
                   <span className="text-xs text-gray-400 dark:text-gray-500">•</span>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 font-medium">
-                    {getModelText(battle)}
-                  </p>
+                  <span className="inline-flex flex-wrap items-center gap-1 text-xs text-gray-600 dark:text-gray-400 font-medium">
+                    {renderModelInfo(battle)}
+                  </span>
                 </div>
               </div>
               <div className="flex-shrink-0">

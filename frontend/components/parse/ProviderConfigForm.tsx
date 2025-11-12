@@ -12,94 +12,40 @@ import {
 } from "@/components/ui/select";
 import { Settings } from "lucide-react";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
+import type { LlamaIndexConfig, ReductoConfig, LandingAIConfig } from "@/types/api";
+import {
+  ProviderPricingMap,
+  formatOptionDescription,
+  llamaIndexConfigToValue,
+  reductoConfigToValue,
+  getModelOptionForConfig,
+} from "@/lib/modelUtils";
 
 const CONFIG_STORAGE_KEY = "ragrace_parse_configs";
 const SELECTION_STORAGE_KEY = "ragrace_parse_selected_providers";
 
 interface ProviderConfigs {
-  llamaindex?: {
-    parse_mode: string;
-    model: string;
-  };
-  reducto?: {
-    mode: string;
-    summarize_figures: boolean;
-  };
-  landingai?: {
-    model: string;
-  };
+  llamaindex?: LlamaIndexConfig;
+  reducto?: ReductoConfig;
+  landingai?: LandingAIConfig;
 }
 
 interface ProviderConfigFormProps {
   onConfigsChange: (configs: ProviderConfigs) => void;
   onSelectionChange: (selected: string[]) => void;
   disabled?: boolean;
+  pricing?: ProviderPricingMap | null;
+  pricingLoading?: boolean;
+  pricingError?: string | null;
 }
-
-// Pricing information (from backend config)
-const PRICING = {
-  llamaindex: {
-    usd_per_credit: 0.001,
-    models: [
-      {
-        parse_mode: "parse_page_with_llm",
-        model: "default",
-        credits_per_page: 3,
-        description: "Cost-effective",
-        detailedDescription: "Cost-effective - 3 credits/page ($0.003/page)",
-      },
-      {
-        parse_mode: "parse_page_with_agent",
-        model: "openai-gpt-4-1-mini",
-        credits_per_page: 10,
-        description: "Agentic",
-        detailedDescription: "Agentic - 10 credits/page ($0.010/page)",
-      },
-      {
-        parse_mode: "parse_page_with_agent",
-        model: "anthropic-sonnet-4.0",
-        credits_per_page: 90,
-        description: "Agentic Plus",
-        detailedDescription: "Agentic Plus - 90 credits/page ($0.090/page)",
-      },
-    ],
-  },
-  reducto: {
-    usd_per_credit: 0.015,
-    models: [
-      {
-        mode: "standard",
-        summarize_figures: false,
-        credits_per_page: 1,
-        description: "Standard Page",
-        detailedDescription: "Standard Page - 1 credit/page ($0.015/page)",
-      },
-      {
-        mode: "complex",
-        summarize_figures: true,
-        credits_per_page: 2,
-        description: "Complex Page (VLM enhance)",
-        detailedDescription: "Complex Page (VLM enhance) - 2 credits/page ($0.030/page)",
-      },
-    ],
-  },
-  landingai: {
-    usd_per_credit: 0.01,
-    models: [
-      {
-        model: "dpt-2",
-        credits_per_page: 3,
-        description: "DPT-2",
-        detailedDescription: "DPT-2 - 3 credits/page ($0.030/page)",
-      },
-    ],
-  },
-};
 
 export function ProviderConfigForm({
   onConfigsChange,
   onSelectionChange,
   disabled = false,
+  pricing,
+  pricingLoading = false,
+  pricingError = null,
 }: ProviderConfigFormProps) {
   const [selectedProviders, setSelectedProviders] = useState<string[]>([
     "llamaindex",
@@ -108,6 +54,7 @@ export function ProviderConfigForm({
   ]);
   const [configs, setConfigs] = useState<ProviderConfigs>({
     llamaindex: {
+      mode: "agentic",
       parse_mode: "parse_page_with_agent",
       model: "openai-gpt-4-1-mini",
     },
@@ -116,9 +63,19 @@ export function ProviderConfigForm({
       summarize_figures: false,
     },
     landingai: {
+      mode: "dpt-2",
       model: "dpt-2",
     },
   });
+
+  const llamaOptions = pricing?.llamaindex?.models ?? [];
+  const reductoOptions = pricing?.reducto?.models ?? [];
+  const landingaiOptions = pricing?.landingai?.models ?? [];
+  const landingaiValue =
+    landingaiOptions.find((option) => option.value === configs.landingai?.mode)?.value ||
+    configs.landingai?.mode ||
+    landingaiOptions[0]?.value ||
+    "";
 
   // Load configs and selection from localStorage on mount
   useEffect(() => {
@@ -149,6 +106,57 @@ export function ProviderConfigForm({
     }
   }, []);
 
+  useEffect(() => {
+    if (!pricing) return;
+
+    setConfigs((current) => {
+      let changed = false;
+      const next: ProviderConfigs = { ...current };
+
+      const updateProvider = (provider: keyof ProviderConfigs) => {
+        const providerKey = provider as string;
+        const options = pricing?.[providerKey]?.models ?? [];
+        if (!options.length) {
+          return;
+        }
+
+        const matched = getModelOptionForConfig(providerKey, next[provider], pricing);
+        const target = matched ?? options[0];
+        if (!target) {
+          return;
+        }
+
+        const targetConfig = target.config as Record<string, any>;
+        const currentConfig = next[provider] as Record<string, any> | undefined;
+        const configsMatch = currentConfig && Object.keys({ ...currentConfig, ...targetConfig }).every(
+          (key) => currentConfig[key] === targetConfig[key]
+        );
+
+        if (!configsMatch) {
+          next[provider] = targetConfig as any;
+          changed = true;
+        }
+      };
+
+      updateProvider("llamaindex");
+      updateProvider("reducto");
+      updateProvider("landingai");
+
+      if (!changed) {
+        return current;
+      }
+
+      try {
+        localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(next));
+      } catch (error) {
+        console.error("Failed to save configs to localStorage:", error);
+      }
+
+      onConfigsChange(next);
+      return next;
+    });
+  }, [pricing]);
+
   const handleProviderToggle = (provider: string) => {
     const newSelection = selectedProviders.includes(provider)
       ? selectedProviders.filter((p) => p !== provider)
@@ -170,12 +178,10 @@ export function ProviderConfigForm({
     provider: keyof ProviderConfigs,
     updates: Record<string, any>
   ) => {
+    const nextValue = updates.mode ? updates : { ...configs[provider], ...updates };
     const newConfigs = {
       ...configs,
-      [provider]: {
-        ...configs[provider],
-        ...updates,
-      },
+      [provider]: nextValue,
     };
     setConfigs(newConfigs);
 
@@ -217,27 +223,37 @@ export function ProviderConfigForm({
               Model
             </Label>
             <Select
-              value={`${configs.llamaindex?.parse_mode}:${configs.llamaindex?.model}`}
+              value={configs.llamaindex ? llamaIndexConfigToValue(configs.llamaindex) : ""}
               onValueChange={(value) => {
-                const [parse_mode, model] = value.split(":");
-                handleFullConfigChange("llamaindex", { parse_mode, model });
+                const option = llamaOptions.find((model) => model.value === value);
+                if (option) {
+                  handleFullConfigChange("llamaindex", option.config);
+                }
               }}
-              disabled={disabled || !selectedProviders.includes("llamaindex")}
+              disabled={
+                disabled ||
+                !selectedProviders.includes("llamaindex") ||
+                llamaOptions.length === 0
+              }
             >
               <SelectTrigger id="llamaindex-model">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PRICING.llamaindex.models.map((model) => (
-                  <SelectItem
-                    key={`${model.parse_mode}:${model.model}`}
-                    value={`${model.parse_mode}:${model.model}`}
-                  >
-                    {model.detailedDescription}
+                {llamaOptions.map((model) => (
+                  <SelectItem key={model.value} value={model.value}>
+                    {formatOptionDescription(model)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {llamaOptions.length === 0 && (
+              <p className="mt-2 text-xs text-gray-500">
+                {pricingLoading
+                  ? "Loading pricing..."
+                  : pricingError || "Pricing data unavailable."}
+              </p>
+            )}
           </div>
         </div>
 
@@ -262,26 +278,37 @@ export function ProviderConfigForm({
               Mode
             </Label>
             <Select
-              value={configs.reducto?.mode}
+              value={configs.reducto ? reductoConfigToValue(configs.reducto) : ""}
               onValueChange={(value) => {
-                handleFullConfigChange("reducto", {
-                  mode: value,
-                  summarize_figures: value === "complex",
-                });
+                const option = reductoOptions.find((model) => model.value === value);
+                if (option) {
+                  handleFullConfigChange("reducto", option.config);
+                }
               }}
-              disabled={disabled || !selectedProviders.includes("reducto")}
+              disabled={
+                disabled ||
+                !selectedProviders.includes("reducto") ||
+                reductoOptions.length === 0
+              }
             >
               <SelectTrigger id="reducto-mode">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PRICING.reducto.models.map((model) => (
-                  <SelectItem key={model.mode} value={model.mode}>
-                    {model.detailedDescription}
+                {reductoOptions.map((model) => (
+                  <SelectItem key={model.value} value={model.value}>
+                    {formatOptionDescription(model)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {reductoOptions.length === 0 && (
+              <p className="mt-2 text-xs text-gray-500">
+                {pricingLoading
+                  ? "Loading pricing..."
+                  : pricingError || "Pricing data unavailable."}
+              </p>
+            )}
           </div>
         </div>
 
@@ -306,18 +333,37 @@ export function ProviderConfigForm({
               Model
             </Label>
             <Select
-              value="dpt-2"
-              disabled={disabled || !selectedProviders.includes("landingai")}
+              value={landingaiValue || undefined}
+              onValueChange={(value) => {
+                const option = landingaiOptions.find((model) => model.value === value);
+                if (option) {
+                  handleFullConfigChange("landingai", option.config);
+                }
+              }}
+              disabled={
+                disabled ||
+                !selectedProviders.includes("landingai") ||
+                landingaiOptions.length === 0
+              }
             >
               <SelectTrigger id="landingai-model">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="dpt-2">
-                  {PRICING.landingai.models[0].detailedDescription}
-                </SelectItem>
+                {landingaiOptions.map((model) => (
+                  <SelectItem key={model.value} value={model.value}>
+                    {formatOptionDescription(model)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {landingaiOptions.length === 0 && (
+              <p className="mt-2 text-xs text-gray-500">
+                {pricingLoading
+                  ? "Loading pricing..."
+                  : pricingError || "Pricing data unavailable."}
+              </p>
+            )}
           </div>
         </div>
       </div>

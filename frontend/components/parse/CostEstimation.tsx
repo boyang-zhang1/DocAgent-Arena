@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DollarSign, FileText, AlertCircle } from "lucide-react";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
+import { ProviderPricingMap, getModelOptionForConfig } from "@/lib/modelUtils";
 
 interface ProviderCost {
   credits_per_page: number;
@@ -18,42 +19,10 @@ interface CostEstimationProps {
   configs: Record<string, any>;
   onConfirm: () => void;
   disabled?: boolean;
+  pricing?: ProviderPricingMap | null;
+  pricingLoading?: boolean;
+  pricingError?: string | null;
 }
-
-// Pricing information (must match ApiKeyForm)
-const PRICING = {
-  llamaindex: {
-    usd_per_credit: 0.001,
-    models: [
-      {
-        parse_mode: "parse_page_with_llm",
-        model: "default",
-        credits_per_page: 3,
-      },
-      {
-        parse_mode: "parse_page_with_agent",
-        model: "openai-gpt-4-1-mini",
-        credits_per_page: 10,
-      },
-      {
-        parse_mode: "parse_page_with_agent",
-        model: "anthropic-sonnet-4.0",
-        credits_per_page: 90,
-      },
-    ],
-  },
-  reducto: {
-    usd_per_credit: 0.015,
-    models: [
-      { mode: "standard", summarize_figures: false, credits_per_page: 1 },
-      { mode: "complex", summarize_figures: true, credits_per_page: 2 },
-    ],
-  },
-  landingai: {
-    usd_per_credit: 0.01,
-    models: [{ model: "dpt-2", credits_per_page: 3 }],
-  },
-};
 
 export function CostEstimation({
   pageCount,
@@ -61,34 +30,27 @@ export function CostEstimation({
   configs,
   onConfirm,
   disabled = false,
+  pricing,
+  pricingLoading = false,
+  pricingError = null,
 }: CostEstimationProps) {
   // Calculate cost for each provider
   const calculateProviderCost = (
     provider: string,
     config: any
   ): ProviderCost | null => {
-    const providerPricing = PRICING[provider as keyof typeof PRICING];
+    if (!pricing) return null;
+    const providerPricing = pricing[provider];
     if (!providerPricing) return null;
 
-    let model;
-    if (provider === "llamaindex") {
-      model = providerPricing.models.find(
-        (m: any) =>
-          m.parse_mode === config.parse_mode && m.model === config.model
-      );
-    } else if (provider === "reducto") {
-      model = providerPricing.models.find((m: any) => m.mode === config.mode);
-    } else if (provider === "landingai") {
-      model = providerPricing.models[0];
-    }
+    const option = getModelOptionForConfig(provider, config, pricing);
+    if (!option) return null;
 
-    if (!model) return null;
-
-    const total_credits = pageCount * model.credits_per_page;
-    const total_usd = total_credits * providerPricing.usd_per_credit;
+    const total_credits = pageCount * option.credits_per_page;
+    const total_usd = option.usd_per_page * pageCount;
 
     return {
-      credits_per_page: model.credits_per_page,
+      credits_per_page: option.credits_per_page,
       total_credits,
       usd_per_credit: providerPricing.usd_per_credit,
       total_usd,
@@ -128,7 +90,28 @@ export function CostEstimation({
         <div className="space-y-3">
           {providers.map((provider) => {
             const cost = providerCosts[provider];
-            if (!cost) return null;
+            if (!cost) {
+              return (
+                <div
+                  key={provider}
+                  className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200"
+                >
+                  <div className="flex items-center gap-3">
+                    <ProviderLabel
+                      provider={provider}
+                      size={24}
+                      className="gap-2"
+                    />
+                    <div className="text-sm text-gray-500">
+                      {pricingLoading
+                        ? "Loading pricing..."
+                        : pricingError || "Pricing unavailable"}
+                    </div>
+                  </div>
+                  <div className="text-right text-sm text-gray-400">--</div>
+                </div>
+              );
+            }
 
             return (
               <div
@@ -168,6 +151,14 @@ export function CostEstimation({
             ${totalCost.toFixed(3)}
           </div>
         </div>
+
+        {Object.keys(providerCosts).length === 0 && (
+          <p className="text-xs text-gray-500">
+            {pricingLoading
+              ? "Pricing data is loading..."
+              : pricingError || "Pricing data unavailable; estimates hidden."}
+          </p>
+        )}
 
         {/* Warning if cost is high */}
         {totalCost > 1.0 && (

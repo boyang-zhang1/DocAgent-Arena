@@ -25,28 +25,39 @@ class CostComparisonResponse(BaseModel):
     total_usd: float
 
 
+class PricingModelOption(BaseModel):
+    """Single model/pricing option exposed to the frontend."""
+
+    label: str
+    value: str
+    credits_per_page: float
+    usd_per_page: float
+    description: Optional[str] = None
+    config: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ProviderPricingInfo(BaseModel):
+    """Provider-level pricing metadata."""
+
+    provider: str
+    usd_per_credit: float
+    models: List[PricingModelOption]
+
+
 class LlamaIndexConfig(BaseModel):
     """Configuration for LlamaIndex parsing."""
 
-    parse_mode: str = Field(
-        default="parse_page_with_agent",
-        description="Parse mode: parse_page_with_agent or parse_page_with_llm"
-    )
-    model: str = Field(
-        default="openai-gpt-4-1-mini",
-        description="Model to use for parsing"
-    )
+    mode: str = Field(default="agentic", description="User-facing mode identifier")
+    parse_mode: Optional[str] = Field(default=None, description="Adapter parse mode setting")
+    model: Optional[str] = Field(default=None, description="Adapter model identifier")
 
 
 class ReductoConfig(BaseModel):
     """Configuration for Reducto parsing."""
 
-    mode: str = Field(
-        default="standard",
-        description="Mode: standard (1 credit/page) or complex (2 credits/page)"
-    )
-    summarize_figures: bool = Field(
-        default=False,
+    mode: str = Field(default="standard", description="Mode: standard or complex")
+    summarize_figures: Optional[bool] = Field(
+        default=None,
         description="Enable VLM enhancement for complex pages"
     )
 
@@ -54,10 +65,8 @@ class ReductoConfig(BaseModel):
 class LandingAIConfig(BaseModel):
     """Configuration for LandingAI parsing."""
 
-    model: str = Field(
-        default="dpt-2",
-        description="Model to use (currently only dpt-2 is available)"
-    )
+    mode: str = Field(default="dpt-2", description="LandingAI mode identifier")
+    model: Optional[str] = Field(default=None, description="LandingAI model identifier")
 
 
 class BattleAssignment(BaseModel):

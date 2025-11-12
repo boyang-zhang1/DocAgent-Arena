@@ -2,14 +2,12 @@
 
 import { LlamaIndexConfig, ReductoConfig } from "@/types/api";
 import {
-  LLAMAINDEX_MODELS,
-  REDUCTO_MODELS,
+  ProviderPricingMap,
   llamaIndexConfigToValue,
   reductoConfigToValue,
-  valueToLlamaIndexConfig,
-  valueToReductoConfig,
-  getLlamaIndexDisplayName,
-  getReductoDisplayName,
+  getModelOptionForConfig,
+  formatOptionDescription,
+  getFallbackLabel,
 } from "@/lib/modelUtils";
 import {
   Select,
@@ -31,30 +29,67 @@ interface ModelSelectionCardProps {
     reducto: ReductoConfig;
   }) => void;
   readOnly?: boolean;
+  pricing?: ProviderPricingMap | null;
+  pricingLoading?: boolean;
+  pricingError?: string | null;
 }
 
 export function ModelSelectionCard({
   selectedConfigs,
   onConfigChange,
   readOnly = false,
+  pricing,
+  pricingLoading = false,
+  pricingError = null,
 }: ModelSelectionCardProps) {
   const handleLlamaIndexChange = (value: string) => {
     if (readOnly || !onConfigChange) return;
-    const newConfig = valueToLlamaIndexConfig(value);
+    const option = pricing?.llamaindex?.models.find((model) => model.value === value);
+    if (!option) return;
     onConfigChange({
       ...selectedConfigs,
-      llamaindex: newConfig,
+      llamaindex: option.config as LlamaIndexConfig,
     });
   };
 
   const handleReductoChange = (value: string) => {
     if (readOnly || !onConfigChange) return;
-    const newConfig = valueToReductoConfig(value);
+    const option = pricing?.reducto?.models.find((model) => model.value === value);
+    if (!option) return;
     onConfigChange({
       ...selectedConfigs,
-      reducto: newConfig,
+      reducto: option.config as ReductoConfig,
     });
   };
+
+  if (!pricing) {
+    return (
+      <div className="rounded-xl border border-purple-200 bg-purple-50/70 dark:border-purple-900/50 dark:bg-purple-950/30 p-4">
+        <h3 className="text-sm font-semibold text-purple-900 dark:text-purple-100 mb-3">
+          {readOnly ? "Models used in this battle" : "Model Selection"}
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          {pricingLoading
+            ? "Loading provider pricing..."
+            : pricingError || "Pricing data unavailable."}
+        </p>
+      </div>
+    );
+  }
+
+  const llamaOptions = pricing.llamaindex?.models ?? [];
+  const reductoOptions = pricing.reducto?.models ?? [];
+
+  const llamaSelection = getModelOptionForConfig(
+    "llamaindex",
+    selectedConfigs.llamaindex,
+    pricing
+  );
+  const reductoSelection = getModelOptionForConfig(
+    "reducto",
+    selectedConfigs.reducto,
+    pricing
+  );
 
   return (
     <div className="rounded-xl border border-purple-200 bg-purple-50/70 dark:border-purple-900/50 dark:bg-purple-950/30 p-4">
@@ -70,7 +105,7 @@ export function ModelSelectionCard({
           </div>
           {readOnly ? (
             <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-950 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2">
-              {getLlamaIndexDisplayName(selectedConfigs.llamaindex)}
+              {llamaSelection?.label || getFallbackLabel("llamaindex")}
             </div>
           ) : (
             <div>
@@ -80,14 +115,15 @@ export function ModelSelectionCard({
               <Select
                 value={llamaIndexConfigToValue(selectedConfigs.llamaindex)}
                 onValueChange={handleLlamaIndexChange}
+                disabled={!llamaOptions.length}
               >
                 <SelectTrigger id="llamaindex-model" className="bg-white dark:bg-gray-950">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {LLAMAINDEX_MODELS.map((model) => (
+                  {llamaOptions.map((model) => (
                     <SelectItem key={model.value} value={model.value}>
-                      {model.label} - {model.description}
+                      {formatOptionDescription(model)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -103,7 +139,7 @@ export function ModelSelectionCard({
           </div>
           {readOnly ? (
             <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-950 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2">
-              {getReductoDisplayName(selectedConfigs.reducto)}
+              {reductoSelection?.label || getFallbackLabel("reducto")}
             </div>
           ) : (
             <div>
@@ -113,14 +149,15 @@ export function ModelSelectionCard({
               <Select
                 value={reductoConfigToValue(selectedConfigs.reducto)}
                 onValueChange={handleReductoChange}
+                disabled={!reductoOptions.length}
               >
                 <SelectTrigger id="reducto-mode" className="bg-white dark:bg-gray-950">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {REDUCTO_MODELS.map((model) => (
+                  {reductoOptions.map((model) => (
                     <SelectItem key={model.value} value={model.value}>
-                      {model.label} - {model.description}
+                      {formatOptionDescription(model)}
                     </SelectItem>
                   ))}
                 </SelectContent>

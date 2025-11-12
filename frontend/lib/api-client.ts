@@ -21,6 +21,7 @@ import type {
   BattleFeedbackResponse,
   BattleHistoryResponse,
   BattleDetailResponse,
+  ProviderPricingInfo,
 } from '@/types/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -204,6 +205,10 @@ class ApiClient {
     return this.fetchWithError<string[]>('/api/v1/parse/available-providers', {
       method: 'GET',
     });
+  }
+
+  async getProviderPricing(): Promise<ProviderPricingInfo[]> {
+    return this.fetchWithError<ProviderPricingInfo[]>('/api/v1/parse/pricing');
   }
 
   /**

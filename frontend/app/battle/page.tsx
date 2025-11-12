@@ -23,21 +23,16 @@ import { ProviderLabel } from "@/components/providers/ProviderLabel";
 import { cn } from "@/lib/utils";
 import {
   getDefaultBattleConfigs,
-  getLlamaIndexDisplayName,
-  getReductoDisplayName,
-  getModelCredits,
+  getModelOptionForConfig,
+  getFallbackLabel,
 } from "@/lib/modelUtils";
+import { useProviderPricing } from "@/hooks/useProviderPricing";
 
 type FeedbackChoice = string | "BOTH_GOOD" | "BOTH_BAD";
 
 type BattleConfigSelection = {
   llamaindex: LlamaIndexConfig;
   reducto: ReductoConfig;
-};
-
-const USD_PER_CREDIT: Record<string, number> = {
-  llamaindex: 0.001,
-  reducto: 0.015,
 };
 
 export default function BattlePage() {
@@ -66,6 +61,8 @@ export default function BattlePage() {
   const [selectedConfigs, setSelectedConfigs] = useState<BattleConfigSelection>(getDefaultBattleConfigs());
   const [battleConfigs, setBattleConfigs] = useState<BattleConfigSelection | null>(null);
 
+  const { pricingMap, loading: pricingLoading, error: pricingError } = useProviderPricing();
+
   const assignments = useMemo(
     () => battleMeta?.assignments ?? [],
     [battleMeta]
@@ -75,37 +72,37 @@ export default function BattlePage() {
   const selectedPageForRun = battlePageNumber ?? currentPage;
   const configsForDisplay = battleConfigs ?? selectedConfigs;
 
-  const formatPricePerPage = (
-    provider: string,
-    config: LlamaIndexConfig | ReductoConfig,
-    cost?: ProviderCost
-  ) => {
-    const usdPerPage = cost?.total_usd ?? getFallbackPrice(provider, config);
-    if (typeof usdPerPage !== "number") return null;
-    return `$${usdPerPage.toFixed(3)}/page`;
-  };
-
-  const getFallbackPrice = (provider: string, config: LlamaIndexConfig | ReductoConfig) => {
-    const usdPerCredit = USD_PER_CREDIT[provider];
-    if (!usdPerCredit) return null;
-    const credits = getModelCredits(provider, config);
-    return credits * usdPerCredit;
-  };
-
   const getModelDisplayInfo = (provider: string, cost?: ProviderCost) => {
-    if (provider === "llamaindex" && configsForDisplay.llamaindex) {
-      return {
-        name: getLlamaIndexDisplayName(configsForDisplay.llamaindex),
-        price: formatPricePerPage("llamaindex", configsForDisplay.llamaindex, cost),
-      };
+    const config =
+      provider === "llamaindex"
+        ? configsForDisplay.llamaindex
+        : provider === "reducto"
+        ? configsForDisplay.reducto
+        : undefined;
+
+    if (!config) {
+      return null;
     }
-    if (provider === "reducto" && configsForDisplay.reducto) {
-      return {
-        name: getReductoDisplayName(configsForDisplay.reducto),
-        price: formatPricePerPage("reducto", configsForDisplay.reducto, cost),
-      };
+
+    const option = getModelOptionForConfig(provider, config, pricingMap);
+    const name = option?.label || getFallbackLabel(provider);
+
+    let price: string | null = null;
+    if (option) {
+      price = `$${option.usd_per_page.toFixed(3)}/page`;
+    } else if (
+      cost?.details &&
+      typeof cost.details.num_pages === "number" &&
+      cost.details.num_pages > 0
+    ) {
+      const perPage = cost.total_usd / cost.details.num_pages;
+      price = `$${perPage.toFixed(3)}/page`;
     }
-    return null;
+
+    return {
+      name,
+      price,
+    };
   };
 
   const resetBattleState = () => {
@@ -265,6 +262,9 @@ export default function BattlePage() {
         <ModelSelectionCard
           selectedConfigs={selectedConfigs}
           onConfigChange={setSelectedConfigs}
+          pricing={pricingMap}
+          pricingLoading={pricingLoading}
+          pricingError={pricingError}
         />
       </div>
 
@@ -554,7 +554,7 @@ export default function BattlePage() {
       )}
 
       <div className="mt-16">
-        <BattleHistory />
+        <BattleHistory pricing={pricingMap} />
       </div>
     </div>
   );

@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { FileText, Loader2 } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
+import type { LlamaIndexConfig, ReductoConfig, LandingAIConfig } from "@/types/api";
+import { useProviderPricing } from "@/hooks/useProviderPricing";
 
 interface PageData {
   page_number: number;
@@ -46,17 +48,9 @@ interface CostResults {
 }
 
 interface ProviderConfigs {
-  llamaindex?: {
-    parse_mode: string;
-    model: string;
-  };
-  reducto?: {
-    mode: string;
-    summarize_figures: boolean;
-  };
-  landingai?: {
-    model: string;
-  };
+  llamaindex?: LlamaIndexConfig;
+  reducto?: ReductoConfig;
+  landingai?: LandingAIConfig;
 }
 
 export default function ParsePage() {
@@ -77,6 +71,8 @@ export default function ParsePage() {
   const [isLoadingPageCount, setIsLoadingPageCount] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const { pricingMap, loading: pricingLoading, error: pricingError } = useProviderPricing();
 
   const handleSelectionChange = (selected: string[]) => {
     setSelectedProviders(selected);
@@ -203,6 +199,9 @@ export default function ParsePage() {
           onConfigsChange={handleConfigsChange}
           onSelectionChange={handleSelectionChange}
           disabled={isUploading || isParsing}
+          pricing={pricingMap}
+          pricingLoading={pricingLoading}
+          pricingError={pricingError}
         />
       </div>
 
@@ -251,6 +250,9 @@ export default function ParsePage() {
                 configs={providerConfigs}
                 onConfirm={handleConfirmParse}
                 disabled={isParsing}
+                pricing={pricingMap}
+                pricingLoading={pricingLoading}
+                pricingError={pricingError}
               />
             </div>
           )}

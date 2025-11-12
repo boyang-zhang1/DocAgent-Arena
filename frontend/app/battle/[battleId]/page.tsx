@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
-import { getDefaultBattleConfigs, getLlamaIndexDisplayName, getReductoDisplayName, getModelCredits } from "@/lib/modelUtils";
+import { getDefaultBattleConfigs, getModelOptionForConfig, getFallbackLabel } from "@/lib/modelUtils";
+import { useProviderPricing } from "@/hooks/useProviderPricing";
 import type { BattleDetailResponse, LlamaIndexConfig, ReductoConfig } from "@/types/api";
 
 export default function BattleDetailPage() {
@@ -22,6 +23,8 @@ export default function BattleDetailPage() {
   const [battle, setBattle] = useState<BattleDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const { pricingMap } = useProviderPricing();
 
   useEffect(() => {
     loadBattle();
@@ -211,15 +214,17 @@ export default function BattleDetailPage() {
             let modelPricing = "";
 
             if (providerName === "llamaindex" && modelConfigs.llamaindex) {
-              modelDisplayName = getLlamaIndexDisplayName(modelConfigs.llamaindex);
-              const credits = getModelCredits("llamaindex", modelConfigs.llamaindex);
-              const usdPerPage = credits * 0.001; // $0.001 per credit
-              modelPricing = `$${usdPerPage.toFixed(3)}/page`;
+              const option = getModelOptionForConfig("llamaindex", modelConfigs.llamaindex, pricingMap);
+              modelDisplayName = option?.label || getFallbackLabel("llamaindex");
+              if (option) {
+                modelPricing = `$${option.usd_per_page.toFixed(3)}/page`;
+              }
             } else if (providerName === "reducto" && modelConfigs.reducto) {
-              modelDisplayName = getReductoDisplayName(modelConfigs.reducto);
-              const credits = getModelCredits("reducto", modelConfigs.reducto);
-              const usdPerPage = credits * 0.015; // $0.015 per credit
-              modelPricing = `$${usdPerPage.toFixed(3)}/page`;
+              const option = getModelOptionForConfig("reducto", modelConfigs.reducto, pricingMap);
+              modelDisplayName = option?.label || getFallbackLabel("reducto");
+              if (option) {
+                modelPricing = `$${option.usd_per_page.toFixed(3)}/page`;
+              }
             }
 
             const cardClass = cn(
