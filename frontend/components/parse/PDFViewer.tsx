@@ -5,7 +5,8 @@ import { PDFDocument } from "pdf-lib";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface PDFViewerProps {
-  fileId: string;
+  fileId?: string;
+  pdfFile?: File | Blob;
   currentPage: number;
   onPageChange: (page: number) => void;
   onLoadSuccess?: (numPages: number) => void;
@@ -13,6 +14,7 @@ interface PDFViewerProps {
 
 export function PDFViewer({
   fileId,
+  pdfFile,
   currentPage,
   onLoadSuccess,
 }: PDFViewerProps) {
@@ -24,7 +26,7 @@ export function PDFViewer({
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-  // Load full PDF once when fileId changes
+  // Load full PDF once when fileId or pdfFile changes
   useEffect(() => {
     let mounted = true;
 
@@ -33,12 +35,23 @@ export function PDFViewer({
         setLoading(true);
         setError(null);
 
-        const response = await fetch(`${apiUrl}/api/v1/parse/file/${fileId}`);
-        if (!response.ok) {
-          throw new Error(`Failed to load PDF: ${response.statusText}`);
+        let pdfBytes: ArrayBuffer;
+
+        // Priority 1: Use local File/Blob if provided (no network request!)
+        if (pdfFile) {
+          pdfBytes = await pdfFile.arrayBuffer();
+        }
+        // Priority 2: Fetch from backend by fileId
+        else if (fileId) {
+          const response = await fetch(`${apiUrl}/api/v1/parse/file/${fileId}`);
+          if (!response.ok) {
+            throw new Error(`Failed to load PDF: ${response.statusText}`);
+          }
+          pdfBytes = await response.arrayBuffer();
+        } else {
+          throw new Error("Either pdfFile or fileId must be provided");
         }
 
-        const pdfBytes = await response.arrayBuffer();
         const loadedPdf = await PDFDocument.load(pdfBytes);
 
         if (mounted) {
@@ -60,7 +73,7 @@ export function PDFViewer({
     return () => {
       mounted = false;
     };
-  }, [fileId, apiUrl, onLoadSuccess]);
+  }, [fileId, pdfFile, apiUrl, onLoadSuccess]);
 
   // Extract current page when page changes
   useEffect(() => {

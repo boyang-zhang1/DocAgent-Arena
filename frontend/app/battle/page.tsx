@@ -40,6 +40,7 @@ type BattleConfigSelection = {
 export default function BattlePage() {
   const [fileId, setFileId] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [battlePageNumber, setBattlePageNumber] = useState<number | null>(null);
@@ -130,6 +131,7 @@ export default function BattlePage() {
       const upload = await apiClient.uploadPdf(file);
       setFileId(upload.file_id);
       setFileName(upload.filename);
+      setPdfFile(file); // Store File object for local viewing
       setCurrentPage(1);
       setBattlePageNumber(null);
 
@@ -233,6 +235,7 @@ export default function BattlePage() {
   const handleReset = () => {
     setFileId(null);
     setFileName("");
+    setPdfFile(null);
     setPageCount(null);
     setCurrentPage(1);
     setBattlePageNumber(null);
@@ -323,6 +326,7 @@ export default function BattlePage() {
             <div className="space-y-4">
               <PDFViewer
                 fileId={fileId}
+                pdfFile={pdfFile || undefined}
                 currentPage={currentPage}
                 onPageChange={setCurrentPage}
                 onLoadSuccess={(numPages) => {
