@@ -3,9 +3,13 @@
 import type { ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import rehypeRaw from "rehype-raw";
+import rehypeKatex from "rehype-katex";
+import rehypeMermaid from "rehype-mermaid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import "katex/dist/katex.min.css";
 
 interface MarkdownViewerProps {
   title: ReactNode;
@@ -24,6 +28,14 @@ export function MarkdownViewer({
   footer,
   cardClassName,
 }: MarkdownViewerProps) {
+  // Preprocess markdown to normalize LaTeX syntax
+  // Convert \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
+  const processedMarkdown = markdown
+    ? markdown
+        .replace(/\\\((.*?)\\\)/g, (_, content) => `$${content}$`)  // Inline: \(...\) -> $...$
+        .replace(/\\\[(.*?)\\\]/gs, (_, content) => `$$\n${content}\n$$`)  // Display: \[...\] -> $$...$$
+    : undefined;
+
   const markdownComponents: Components = {
     // Custom heading styling
     h1: ({ node, ...props }) => (
@@ -97,11 +109,11 @@ export function MarkdownViewer({
           <div className="flex-1 flex flex-col">
             <div className="prose dark:prose-invert max-w-none prose-lg prose-headings:font-bold prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl text-[17px] leading-relaxed">
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
+                remarkPlugins={[remarkGfm, remarkMath]}
+                rehypePlugins={[rehypeKatex, rehypeMermaid, rehypeRaw]}
                 components={markdownComponents}
               >
-                {markdown}
+                {processedMarkdown}
               </ReactMarkdown>
             </div>
             <details className="mt-4 rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 text-sm text-gray-600 dark:text-gray-300">
