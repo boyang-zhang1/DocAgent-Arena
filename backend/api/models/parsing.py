@@ -261,3 +261,48 @@ class BattleFeedbackResponse(BaseModel):
     preferred_labels: List[str]
     comment: Optional[str]
     assignments: List[BattleAssignment]
+
+
+class BattleHistoryItem(BaseModel):
+    """Summary of a single battle for history list."""
+
+    battle_id: str
+    original_name: str
+    page_number: int
+    created_at: str
+    winner: Optional[str] = None  # Provider name that won, or "tie", "none"
+    preferred_labels: Optional[List[str]] = None
+
+
+class BattleHistoryResponse(BaseModel):
+    """Paginated list of battle history."""
+
+    battles: List[BattleHistoryItem]
+    total: int
+    page: int
+    limit: int
+
+
+class BattleProviderDetail(BaseModel):
+    """Provider result details for battle detail view."""
+
+    provider: str
+    label: str
+    content: ProviderParseResult
+    cost_usd: Optional[float] = None
+    cost_credits: Optional[float] = None
+
+
+class BattleDetailResponse(BaseModel):
+    """Complete battle details for detail view."""
+
+    battle_id: str
+    original_name: str
+    page_number: int
+    upload_file_id: str
+    storage_url: Optional[str] = None
+    storage_path: Optional[str] = None
+    created_at: str
+    providers: List[BattleProviderDetail]
+    feedback: Optional[Dict[str, Any]] = None
+    assignments: List[BattleAssignment]

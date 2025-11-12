@@ -19,6 +19,8 @@ import type {
   CostComparisonResponse,
   BattleFeedbackRequest,
   BattleFeedbackResponse,
+  BattleHistoryResponse,
+  BattleDetailResponse,
 } from '@/types/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -262,6 +264,35 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  }
+
+  /**
+   * Get battle history with pagination
+   *
+   * @param page Page number (1-indexed)
+   * @param limit Number of items per page
+   * @returns Paginated battle history
+   */
+  async getBattleHistory(page: number = 1, limit: number = 10): Promise<BattleHistoryResponse> {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    });
+    return this.fetchWithError<BattleHistoryResponse>(
+      `/api/v1/parse/battles?${params.toString()}`
+    );
+  }
+
+  /**
+   * Get complete battle details
+   *
+   * @param battleId UUID of the battle
+   * @returns Full battle details with providers and feedback
+   */
+  async getBattleDetail(battleId: string): Promise<BattleDetailResponse> {
+    return this.fetchWithError<BattleDetailResponse>(
+      `/api/v1/parse/battles/${battleId}`
+    );
   }
 
   /**

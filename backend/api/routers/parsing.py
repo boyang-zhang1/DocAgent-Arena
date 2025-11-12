@@ -30,6 +30,10 @@ from api.models.parsing import (
     BattlePreference,
     BattleMetadata,
     BattleAssignment,
+    BattleHistoryItem,
+    BattleHistoryResponse,
+    BattleProviderDetail,
+    BattleDetailResponse,
 )
 from api.db import get_db
 from api.services.storage import SupabaseStorageService
@@ -105,14 +109,16 @@ async def _persist_battle_run(
     client = prisma_client
 
     storage_url: Optional[str] = None
-    storage_path = f"{BATTLE_STORAGE_PREFIX}/{battle_id}.pdf"
+    # Always store local path - this is our source of truth
+    local_storage_path = str(storage_input_path)
 
     try:
         storage_service = SupabaseStorageService()
-        storage_url = storage_service.upload(str(storage_input_path), storage_path)
+        supabase_path = f"{BATTLE_STORAGE_PREFIX}/{battle_id}.pdf"
+        storage_url = storage_service.upload(str(storage_input_path), supabase_path)
+        logger.info("Uploaded battle PDF to Supabase: %s", storage_url)
     except Exception as exc:
         logger.warning("Unable to upload battle PDF to Supabase: %s", exc)
-        storage_path = str(storage_input_path)
 
     try:
         pricing_config = load_pricing_config()
@@ -177,7 +183,7 @@ async def _persist_battle_run(
                 "id": battle_id,
                 "uploadFileId": upload_file_id,
                 "originalName": original_name,
-                "storagePath": storage_path,
+                "storagePath": local_storage_path,
                 "storageUrl": storage_url,
                 "pageNumber": page_number,
                 "providers": providers,
@@ -727,6 +733,55 @@ async def get_pdf(file_id: str):
     )
 
 
+@router.get("/battle-pdf/{battle_id}")
+async def get_battle_pdf(battle_id: str, db: Prisma = Depends(get_db)):
+    """
+    Get the single-page battle PDF file for viewing.
+
+    Args:
+        battle_id: UUID of the battle
+
+    Returns:
+        FileResponse with single-page PDF content
+
+    Raises:
+        HTTPException: If battle or file not found
+    """
+    battle = await db.parsebattlerun.find_unique(where={"id": battle_id})
+
+    if not battle:
+        raise HTTPException(status_code=404, detail=f"Battle not found: {battle_id}")
+
+    # Try direct storage path first (for new battles)
+    storage_path = Path(battle.storagePath)
+    if storage_path.exists():
+        return FileResponse(
+            storage_path,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename=battle_{battle_id}_page_{battle.pageNumber}.pdf"},
+        )
+
+    # Fallback: Search for old battles using pattern {uploadFileId}_page_{pageNumber}_*.pdf
+    pattern = f"{battle.uploadFileId}_page_{battle.pageNumber}_*.pdf"
+    matching_files = list(TEMP_DIR.glob(pattern))
+
+    if matching_files:
+        # Use the first match (should only be one)
+        pdf_path = matching_files[0]
+        logger.info(f"Found battle PDF via pattern match: {pdf_path}")
+        return FileResponse(
+            pdf_path,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename=battle_{battle_id}_page_{battle.pageNumber}.pdf"},
+        )
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"Battle PDF not found. Storage path: {battle.storagePath}, Upload ID: {battle.uploadFileId}, Page: {battle.pageNumber}"
+    )
+
+
+
 @router.post("/calculate-cost", response_model=CostComparisonResponse)
 async def calculate_cost(request: ParseCompareResponse):
     """
@@ -780,3 +835,182 @@ def _jsonify(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [_jsonify(v) for v in value]
     return str(value)
+
+
+@router.get("/battles", response_model=BattleHistoryResponse)
+async def get_battle_history(
+    page: int = 1,
+    limit: int = 10,
+    db: Prisma = Depends(get_db)
+):
+    """
+    Get paginated list of battle history (only battles with feedback).
+
+    Args:
+        page: Page number (1-indexed)
+        limit: Number of items per page
+
+    Returns:
+        BattleHistoryResponse with list of battles that have feedback
+    """
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 100:
+        limit = 10
+
+    skip = (page - 1) * limit
+
+    # Get total count of battles WITH feedback only
+    total = await db.parsebattlerun.count(
+        where={
+            "feedback": {
+                "is": {}
+            }
+        }
+    )
+
+    # Get battles with feedback only
+    battles = await db.parsebattlerun.find_many(
+        where={
+            "feedback": {
+                "is": {}
+            }
+        },
+        skip=skip,
+        take=limit,
+        order={"createdAt": "desc"},
+        include={"feedback": True}
+    )
+
+    items = []
+    for battle in battles:
+        # Determine winner from feedback
+        winner = None
+        preferred_labels = None
+        if battle.feedback:
+            preferred_labels = battle.feedback.preferredLabels
+            metadata = battle.metadata or {}
+            label_to_provider = metadata.get("label_providers") or {}
+
+            if len(preferred_labels) == 1:
+                # One winner
+                winner_label = preferred_labels[0]
+                winner = label_to_provider.get(winner_label, winner_label)
+            elif len(preferred_labels) > 1:
+                winner = "tie"
+            elif len(preferred_labels) == 0:
+                winner = "none"
+
+        items.append(BattleHistoryItem(
+            battle_id=battle.id,
+            original_name=battle.originalName,
+            page_number=battle.pageNumber,
+            created_at=battle.createdAt.isoformat(),
+            winner=winner,
+            preferred_labels=preferred_labels
+        ))
+
+    return BattleHistoryResponse(
+        battles=items,
+        total=total,
+        page=page,
+        limit=limit
+    )
+
+
+@router.get("/battles/{battle_id}", response_model=BattleDetailResponse)
+async def get_battle_detail(
+    battle_id: str,
+    db: Prisma = Depends(get_db)
+):
+    """
+    Get complete battle details.
+
+    Args:
+        battle_id: UUID of the battle
+
+    Returns:
+        BattleDetailResponse with full battle details
+
+    Raises:
+        HTTPException: If battle not found
+    """
+    battle = await db.parsebattlerun.find_unique(
+        where={"id": battle_id},
+        include={
+            "providerResults": True,
+            "feedback": True
+        }
+    )
+
+    if not battle:
+        raise HTTPException(status_code=404, detail=f"Battle not found: {battle_id}")
+
+    # Extract assignments from metadata
+    metadata = battle.metadata or {}
+    assignments_raw = metadata.get("assignments") or []
+    assignments: List[BattleAssignment] = []
+
+    for entry in assignments_raw:
+        try:
+            assignments.append(BattleAssignment(**entry))
+        except Exception:
+            continue
+
+    if not assignments:
+        label_map = metadata.get("label_providers") or {}
+        for label, provider in label_map.items():
+            assignments.append(BattleAssignment(label=label, provider=provider))
+
+    # Build provider details
+    provider_details = []
+    for result in battle.providerResults:
+        content_data = result.content or {}
+        pages_data = content_data.get("pages", [])
+
+        pages = [
+            PageData(
+                page_number=page["page_number"],
+                markdown=page["markdown"],
+                images=page.get("images", []),
+                metadata=page.get("metadata", {})
+            )
+            for page in pages_data
+        ]
+
+        provider_result = ProviderParseResult(
+            total_pages=result.totalPages,
+            pages=pages,
+            processing_time=result.processingTime,
+            usage=result.usage or {}
+        )
+
+        provider_details.append(BattleProviderDetail(
+            provider=result.provider,
+            label=result.label,
+            content=provider_result,
+            cost_usd=result.costUsd,
+            cost_credits=result.costCredits
+        ))
+
+    # Build feedback data
+    feedback_data = None
+    if battle.feedback:
+        feedback_data = {
+            "preferred_labels": battle.feedback.preferredLabels,
+            "comment": battle.feedback.comment,
+            "revealed_at": battle.feedback.revealedAt.isoformat() if battle.feedback.revealedAt else None
+        }
+
+    return BattleDetailResponse(
+        battle_id=battle.id,
+        original_name=battle.originalName,
+        page_number=battle.pageNumber,
+        upload_file_id=battle.uploadFileId,
+        storage_url=battle.storageUrl,
+        storage_path=battle.storagePath,
+        created_at=battle.createdAt.isoformat(),
+        providers=provider_details,
+        feedback=feedback_data,
+        assignments=assignments
+    )

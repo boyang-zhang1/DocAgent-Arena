@@ -6,6 +6,7 @@ import { PDFViewer } from "@/components/parse/PDFViewer";
 import { PageNavigator } from "@/components/parse/PageNavigator";
 import { MarkdownViewer } from "@/components/parse/MarkdownViewer";
 import { CostDisplay } from "@/components/parse/CostDisplay";
+import { BattleHistory } from "@/components/parse/BattleHistory";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileText, ShieldCheck, Sparkles } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
@@ -267,18 +268,16 @@ export default function BattlePage() {
 
           {fileId && (
             <div className="space-y-4">
-              <div className="max-w-4xl mx-auto">
-                <PDFViewer
-                  fileId={fileId}
-                  currentPage={currentPage}
-                  onPageChange={setCurrentPage}
-                  onLoadSuccess={(numPages) => {
-                    if (!pageCount) {
-                      setPageCount(numPages);
-                    }
-                  }}
-                />
-              </div>
+              <PDFViewer
+                fileId={fileId}
+                currentPage={currentPage}
+                onPageChange={setCurrentPage}
+                onLoadSuccess={(numPages) => {
+                  if (!pageCount) {
+                    setPageCount(numPages);
+                  }
+                }}
+              />
               {pageCount && (
                 <>
                   <PageNavigator
@@ -487,6 +486,10 @@ export default function BattlePage() {
           )}
         </div>
       )}
+
+      <div className="mt-16">
+        <BattleHistory />
+      </div>
     </div>
   );
 }

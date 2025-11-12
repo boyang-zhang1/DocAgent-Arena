@@ -248,3 +248,45 @@ export interface ProviderPricingInfo {
   models: ModelOption[];
   usd_per_credit: number;
 }
+
+// Battle History Types
+export interface BattleHistoryItem {
+  battle_id: string;
+  original_name: string;
+  page_number: number;
+  created_at: string;
+  winner?: string | null;
+  preferred_labels?: string[] | null;
+}
+
+export interface BattleHistoryResponse {
+  battles: BattleHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface BattleProviderDetail {
+  provider: string;
+  label: string;
+  content: ProviderParseResult;
+  cost_usd?: number | null;
+  cost_credits?: number | null;
+}
+
+export interface BattleDetailResponse {
+  battle_id: string;
+  original_name: string;
+  page_number: number;
+  upload_file_id: string;
+  storage_url?: string | null;
+  storage_path?: string | null;
+  created_at: string;
+  providers: BattleProviderDetail[];
+  feedback?: {
+    preferred_labels: string[];
+    comment?: string | null;
+    revealed_at?: string | null;
+  } | null;
+  assignments: BattleAssignment[];
+}
