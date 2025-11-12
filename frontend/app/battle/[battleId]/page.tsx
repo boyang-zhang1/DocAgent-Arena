@@ -11,7 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
-import type { BattleDetailResponse } from "@/types/api";
+import { getDefaultBattleConfigs, getLlamaIndexDisplayName, getReductoDisplayName, getModelCredits } from "@/lib/modelUtils";
+import type { BattleDetailResponse, LlamaIndexConfig, ReductoConfig } from "@/types/api";
 
 export default function BattleDetailPage() {
   const params = useParams();
@@ -86,6 +87,22 @@ export default function BattleDetailPage() {
   const winnerStatus = getWinnerStatus();
   const pageNumber = battle.page_number;
   const sortedProviders = [...battle.providers].sort((a, b) => a.label.localeCompare(b.label));
+
+  // Extract model configs from metadata
+  const modelConfigs = {
+    llamaindex: getDefaultBattleConfigs().llamaindex,
+    reducto: getDefaultBattleConfigs().reducto,
+  };
+
+  // Update configs from battle metadata
+  if (battle.provider_configs) {
+    if (battle.provider_configs.llamaindex) {
+      modelConfigs.llamaindex = battle.provider_configs.llamaindex as LlamaIndexConfig;
+    }
+    if (battle.provider_configs.reducto) {
+      modelConfigs.reducto = battle.provider_configs.reducto as ReductoConfig;
+    }
+  }
 
   return (
     <div className="container mx-auto px-4 py-8 space-y-8">
@@ -188,6 +205,23 @@ export default function BattleDetailPage() {
 
             const displayName = getProviderDisplayName(assignment?.provider || provider.provider);
 
+            // Get model display name and pricing
+            const providerName = assignment?.provider || provider.provider;
+            let modelDisplayName = "";
+            let modelPricing = "";
+
+            if (providerName === "llamaindex" && modelConfigs.llamaindex) {
+              modelDisplayName = getLlamaIndexDisplayName(modelConfigs.llamaindex);
+              const credits = getModelCredits("llamaindex", modelConfigs.llamaindex);
+              const usdPerPage = credits * 0.001; // $0.001 per credit
+              modelPricing = `$${usdPerPage.toFixed(3)}/page`;
+            } else if (providerName === "reducto" && modelConfigs.reducto) {
+              modelDisplayName = getReductoDisplayName(modelConfigs.reducto);
+              const credits = getModelCredits("reducto", modelConfigs.reducto);
+              const usdPerPage = credits * 0.015; // $0.015 per credit
+              modelPricing = `$${usdPerPage.toFixed(3)}/page`;
+            }
+
             const cardClass = cn(
               "transition-all",
               isThisWinner && "border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/20",
@@ -199,10 +233,14 @@ export default function BattleDetailPage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <ProviderLabel provider={assignment?.provider || provider.provider} size={28} />
-                  <div>
-                    <div className="text-xl font-semibold">{displayName}</div>
-                    <p className="text-sm text-gray-500">Provider {provider.label}</p>
-                  </div>
+                  {modelDisplayName && (
+                    <>
+                      <span className="text-gray-400">•</span>
+                      <div className="text-base font-medium text-gray-700 dark:text-gray-300">
+                        {modelDisplayName} ({modelPricing})
+                      </div>
+                    </>
+                  )}
                 </div>
                 {isThisWinner && (
                   <Trophy className="h-5 w-5 text-green-600 dark:text-green-400" />

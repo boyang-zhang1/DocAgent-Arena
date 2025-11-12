@@ -272,6 +272,7 @@ class BattleHistoryItem(BaseModel):
     created_at: str
     winner: Optional[str] = None  # Provider name that won, or "tie", "none"
     preferred_labels: Optional[List[str]] = None
+    model_display_names: Optional[Dict[str, str]] = None  # Maps provider -> model display name
 
 
 class BattleHistoryResponse(BaseModel):
@@ -306,3 +307,4 @@ class BattleDetailResponse(BaseModel):
     providers: List[BattleProviderDetail]
     feedback: Optional[Dict[str, Any]] = None
     assignments: List[BattleAssignment]
+    provider_configs: Optional[Dict[str, Dict[str, Any]]] = None

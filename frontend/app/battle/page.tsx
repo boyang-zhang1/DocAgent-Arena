@@ -7,19 +7,38 @@ import { PageNavigator } from "@/components/parse/PageNavigator";
 import { MarkdownViewer } from "@/components/parse/MarkdownViewer";
 import { CostDisplay } from "@/components/parse/CostDisplay";
 import { BattleHistory } from "@/components/parse/BattleHistory";
+import { ModelSelectionCard } from "@/components/battle/ModelSelectionCard";
 import { Button } from "@/components/ui/button";
-import { Loader2, FileText, ShieldCheck, Sparkles } from "lucide-react";
+import { Loader2, FileText, ShieldCheck } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import {
   type BattleMetadata,
   type ProviderParseResult,
   type ProviderCost,
+  type LlamaIndexConfig,
+  type ReductoConfig,
 } from "@/types/api";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
 import { cn } from "@/lib/utils";
+import {
+  getDefaultBattleConfigs,
+  getLlamaIndexDisplayName,
+  getReductoDisplayName,
+  getModelCredits,
+} from "@/lib/modelUtils";
 
 type FeedbackChoice = string | "BOTH_GOOD" | "BOTH_BAD";
+
+type BattleConfigSelection = {
+  llamaindex: LlamaIndexConfig;
+  reducto: ReductoConfig;
+};
+
+const USD_PER_CREDIT: Record<string, number> = {
+  llamaindex: 0.001,
+  reducto: 0.015,
+};
 
 export default function BattlePage() {
   const [fileId, setFileId] = useState<string | null>(null);
@@ -44,6 +63,9 @@ export default function BattlePage() {
   const [feedbackSuccess, setFeedbackSuccess] = useState(false);
   const [preferredLabels, setPreferredLabels] = useState<string[] | null>(null);
 
+  const [selectedConfigs, setSelectedConfigs] = useState<BattleConfigSelection>(getDefaultBattleConfigs());
+  const [battleConfigs, setBattleConfigs] = useState<BattleConfigSelection | null>(null);
+
   const assignments = useMemo(
     () => battleMeta?.assignments ?? [],
     [battleMeta]
@@ -51,6 +73,40 @@ export default function BattlePage() {
   const isBattleReady = !!parseResults && assignments.length > 0;
   const isRevealed = preferredLabels !== null;
   const selectedPageForRun = battlePageNumber ?? currentPage;
+  const configsForDisplay = battleConfigs ?? selectedConfigs;
+
+  const formatPricePerPage = (
+    provider: string,
+    config: LlamaIndexConfig | ReductoConfig,
+    cost?: ProviderCost
+  ) => {
+    const usdPerPage = cost?.total_usd ?? getFallbackPrice(provider, config);
+    if (typeof usdPerPage !== "number") return null;
+    return `$${usdPerPage.toFixed(3)}/page`;
+  };
+
+  const getFallbackPrice = (provider: string, config: LlamaIndexConfig | ReductoConfig) => {
+    const usdPerCredit = USD_PER_CREDIT[provider];
+    if (!usdPerCredit) return null;
+    const credits = getModelCredits(provider, config);
+    return credits * usdPerCredit;
+  };
+
+  const getModelDisplayInfo = (provider: string, cost?: ProviderCost) => {
+    if (provider === "llamaindex" && configsForDisplay.llamaindex) {
+      return {
+        name: getLlamaIndexDisplayName(configsForDisplay.llamaindex),
+        price: formatPricePerPage("llamaindex", configsForDisplay.llamaindex, cost),
+      };
+    }
+    if (provider === "reducto" && configsForDisplay.reducto) {
+      return {
+        name: getReductoDisplayName(configsForDisplay.reducto),
+        price: formatPricePerPage("reducto", configsForDisplay.reducto, cost),
+      };
+    }
+    return null;
+  };
 
   const resetBattleState = () => {
     setParseResults(null);
@@ -61,6 +117,7 @@ export default function BattlePage() {
     setFeedbackComment("");
     setFeedbackSuccess(false);
     setFeedbackError(null);
+    setBattleConfigs(null);
   };
 
   const handleUpload = async (file: File) => {
@@ -106,6 +163,7 @@ export default function BattlePage() {
         fileId,
         pageNumber: currentPage,
         filename: fileName || undefined,
+        configs: selectedConfigs,
       });
 
       if (!data.battle) {
@@ -115,6 +173,10 @@ export default function BattlePage() {
       setParseResults(data.results);
       setBattleMeta(data.battle);
       setBattlePageNumber(currentPage);
+      setBattleConfigs({
+        llamaindex: { ...selectedConfigs.llamaindex },
+        reducto: { ...selectedConfigs.reducto },
+      });
       setPreferredLabels(null);
       setFeedbackChoice(null);
       setFeedbackComment("");
@@ -200,15 +262,10 @@ export default function BattlePage() {
             </p>
           </div>
         </div>
-        <div className="rounded-xl border border-blue-200 bg-blue-50/70 dark:border-blue-900/50 dark:bg-blue-950/30 p-4 flex gap-3 text-sm text-blue-900 dark:text-blue-100">
-          <Sparkles className="h-5 w-5 shrink-0" />
-          <div>
-            <p className="font-semibold">How credits are used</p>
-            <p>
-              We automatically run LlamaIndex Agentic ($0.010/page) versus Reducto Standard ($0.015/page) on the page you select.
-            </p>
-          </div>
-        </div>
+        <ModelSelectionCard
+          selectedConfigs={selectedConfigs}
+          onConfigChange={setSelectedConfigs}
+        />
       </div>
 
       {error && (
@@ -321,6 +378,7 @@ export default function BattlePage() {
                   const displayName = getProviderDisplayName(provider);
                   const isPreferred = isRevealed && (preferredLabels?.includes(label) ?? false);
                   const isAllBad = isRevealed && (preferredLabels?.length === 0);
+                  const modelDisplayInfo = isRevealed ? getModelDisplayInfo(provider, cost) : null;
                   const cardClass = cn(
                     "transition-all",
                     !isRevealed && "border-gray-200 dark:border-gray-800",
@@ -344,10 +402,18 @@ export default function BattlePage() {
                   const title = isRevealed ? (
                     <div className="flex items-center gap-3">
                       <ProviderLabel provider={provider} size={28} />
-                      <div>
+                      {modelDisplayInfo ? (
+                        <>
+                          <span className="text-gray-400">•</span>
+                          <div className="text-base font-medium text-gray-700 dark:text-gray-300">
+                            {modelDisplayInfo.price
+                              ? `${modelDisplayInfo.name} (${modelDisplayInfo.price})`
+                              : modelDisplayInfo.name}
+                          </div>
+                        </>
+                      ) : (
                         <div className="text-xl font-semibold">{displayName}</div>
-                        <p className="text-sm text-gray-500">Provider {label}</p>
-                      </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">

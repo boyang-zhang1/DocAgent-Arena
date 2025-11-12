@@ -257,6 +257,7 @@ export interface BattleHistoryItem {
   created_at: string;
   winner?: string | null;
   preferred_labels?: string[] | null;
+  model_display_names?: Record<string, string> | null;
 }
 
 export interface BattleHistoryResponse {
@@ -289,4 +290,5 @@ export interface BattleDetailResponse {
     revealed_at?: string | null;
   } | null;
   assignments: BattleAssignment[];
+  provider_configs?: Record<string, LlamaIndexConfig | ReductoConfig | Record<string, any>> | null;
 }

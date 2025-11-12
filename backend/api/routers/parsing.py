@@ -109,16 +109,15 @@ async def _persist_battle_run(
     client = prisma_client
 
     storage_url: Optional[str] = None
-    # Always store local path - this is our source of truth
-    local_storage_path = str(storage_input_path)
+    supabase_path = f"{BATTLE_STORAGE_PREFIX}/{battle_id}.pdf"
 
     try:
         storage_service = SupabaseStorageService()
-        supabase_path = f"{BATTLE_STORAGE_PREFIX}/{battle_id}.pdf"
         storage_url = storage_service.upload(str(storage_input_path), supabase_path)
         logger.info("Uploaded battle PDF to Supabase: %s", storage_url)
     except Exception as exc:
-        logger.warning("Unable to upload battle PDF to Supabase: %s", exc)
+        logger.error("Failed to upload battle PDF to Supabase: %s", exc)
+        raise ValueError(f"Failed to upload battle PDF to Supabase: {exc}")
 
     try:
         pricing_config = load_pricing_config()
@@ -154,6 +153,9 @@ async def _persist_battle_run(
         if pages_payload:
             has_success = True
 
+        # Get model config for this provider from configs dict
+        # Note: We're not storing this in DB anymore, just in metadata
+
         provider_entries.append(
             {
                 "provider": result.provider,
@@ -183,7 +185,7 @@ async def _persist_battle_run(
                 "id": battle_id,
                 "uploadFileId": upload_file_id,
                 "originalName": original_name,
-                "storagePath": local_storage_path,
+                "storagePath": supabase_path,
                 "storageUrl": storage_url,
                 "pageNumber": page_number,
                 "providers": providers,
@@ -736,7 +738,7 @@ async def get_pdf(file_id: str):
 @router.get("/battle-pdf/{battle_id}")
 async def get_battle_pdf(battle_id: str, db: Prisma = Depends(get_db)):
     """
-    Get the single-page battle PDF file for viewing.
+    Get the single-page battle PDF file for viewing from Supabase storage.
 
     Args:
         battle_id: UUID of the battle
@@ -752,33 +754,29 @@ async def get_battle_pdf(battle_id: str, db: Prisma = Depends(get_db)):
     if not battle:
         raise HTTPException(status_code=404, detail=f"Battle not found: {battle_id}")
 
-    # Try direct storage path first (for new battles)
-    storage_path = Path(battle.storagePath)
-    if storage_path.exists():
+    # Download from Supabase storage
+    if not battle.storageUrl:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Battle PDF storage URL not found for battle {battle_id}"
+        )
+
+    try:
+        storage_service = SupabaseStorageService()
+        # Download the file from Supabase to a temporary location
+        temp_pdf = storage_service.download_to_temp(battle.storagePath)
+
         return FileResponse(
-            storage_path,
+            temp_pdf,
             media_type="application/pdf",
             headers={"Content-Disposition": f"inline; filename=battle_{battle_id}_page_{battle.pageNumber}.pdf"},
         )
-
-    # Fallback: Search for old battles using pattern {uploadFileId}_page_{pageNumber}_*.pdf
-    pattern = f"{battle.uploadFileId}_page_{battle.pageNumber}_*.pdf"
-    matching_files = list(TEMP_DIR.glob(pattern))
-
-    if matching_files:
-        # Use the first match (should only be one)
-        pdf_path = matching_files[0]
-        logger.info(f"Found battle PDF via pattern match: {pdf_path}")
-        return FileResponse(
-            pdf_path,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"inline; filename=battle_{battle_id}_page_{battle.pageNumber}.pdf"},
+    except Exception as exc:
+        logger.error(f"Failed to download battle PDF from Supabase: {exc}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Failed to retrieve battle PDF from Supabase: {str(exc)}"
         )
-
-    raise HTTPException(
-        status_code=404,
-        detail=f"Battle PDF not found. Storage path: {battle.storagePath}, Upload ID: {battle.uploadFileId}, Page: {battle.pageNumber}"
-    )
 
 
 
@@ -835,6 +833,27 @@ def _jsonify(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         return [_jsonify(v) for v in value]
     return str(value)
+
+
+def _get_model_display_name(provider: str, config: Dict[str, Any]) -> str:
+    """Extract user-friendly model display name from provider config."""
+    if provider == "llamaindex":
+        parse_mode = config.get("parse_mode", "")
+        model = config.get("model", "")
+        if "llm" in parse_mode:
+            return "Cost-effective"
+        elif "agent" in parse_mode:
+            if "sonnet" in model:
+                return "Agentic Plus"
+            else:
+                return "Agentic"
+        return "Agentic"  # default
+    elif provider == "reducto":
+        mode = config.get("mode", "standard")
+        if mode == "complex":
+            return "Complex VLM"
+        return "Standard"
+    return provider
 
 
 @router.get("/battles", response_model=BattleHistoryResponse)
@@ -901,13 +920,22 @@ async def get_battle_history(
             elif len(preferred_labels) == 0:
                 winner = "none"
 
+        # Extract model display names from metadata
+        metadata = battle.metadata or {}
+        configs = metadata.get("configs") or {}
+        model_display_names = {}
+        for provider, config in configs.items():
+            if config:
+                model_display_names[provider] = _get_model_display_name(provider, config)
+
         items.append(BattleHistoryItem(
             battle_id=battle.id,
             original_name=battle.originalName,
             page_number=battle.pageNumber,
             created_at=battle.createdAt.isoformat(),
             winner=winner,
-            preferred_labels=preferred_labels
+            preferred_labels=preferred_labels,
+            model_display_names=model_display_names if model_display_names else None
         ))
 
     return BattleHistoryResponse(
@@ -993,6 +1021,10 @@ async def get_battle_detail(
             cost_credits=result.costCredits
         ))
 
+    # Extract provider configs from metadata
+    metadata = battle.metadata or {}
+    provider_configs = metadata.get("configs") or None
+
     # Build feedback data
     feedback_data = None
     if battle.feedback:
@@ -1012,5 +1044,6 @@ async def get_battle_detail(
         created_at=battle.createdAt.isoformat(),
         providers=provider_details,
         feedback=feedback_data,
-        assignments=assignments
+        assignments=assignments,
+        provider_configs=provider_configs
     )
