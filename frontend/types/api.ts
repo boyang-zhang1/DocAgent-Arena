@@ -151,11 +151,24 @@ export interface LandingAIConfig {
 
 export type ProviderConfig = LlamaIndexConfig | ReductoConfig | LandingAIConfig;
 
+export interface BattleAssignment {
+  label: string;
+  provider: string;
+}
+
+export interface BattleMetadata {
+  battle_id: string;
+  assignments: BattleAssignment[];
+}
+
+export type BattlePreference = 'A_BETTER' | 'B_BETTER' | 'BOTH_GOOD' | 'BOTH_BAD';
+
 export interface ParseCompareRequest {
   file_id: string;
-  providers: string[];
-  api_keys: Record<string, string>;
+  providers?: string[];
   configs?: Record<string, any>;
+  page_number?: number;
+  filename?: string;
 }
 
 export interface PageData {
@@ -175,6 +188,7 @@ export interface ProviderParseResult {
 export interface ParseCompareResponse {
   file_id: string;
   results: Record<string, ProviderParseResult>;
+  battle?: BattleMetadata;
 }
 
 export interface UploadResponse {
@@ -204,6 +218,20 @@ export interface CostComparisonResponse {
   file_id: string;
   costs: Record<string, ProviderCost>;
   total_usd: number;
+}
+
+export interface BattleFeedbackRequest {
+  battle_id: string;
+  preference?: BattlePreference;
+  preferred_labels?: string[];
+  comment?: string;
+}
+
+export interface BattleFeedbackResponse {
+  battle_id: string;
+  preferred_labels: string[];
+  comment?: string;
+  assignments: BattleAssignment[];
 }
 
 // Pricing configuration types for frontend display

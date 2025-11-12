@@ -129,7 +129,12 @@ export default function ParsePage() {
         }
       });
 
-      const data = await apiClient.compareParses(fileId, selectedProviders, configs);
+      const data = await apiClient.compareParses({
+        fileId,
+        providers: selectedProviders,
+        configs,
+        filename: fileName || undefined,
+      });
       setParseResults(data.results);
 
       // Set total pages from first available provider

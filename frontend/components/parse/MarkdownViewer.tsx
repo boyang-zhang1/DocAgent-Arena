@@ -5,17 +5,24 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 interface MarkdownViewerProps {
   title: ReactNode;
   markdown: string | undefined;
   isLoading?: boolean;
+  subtitle?: ReactNode;
+  footer?: ReactNode;
+  cardClassName?: string;
 }
 
 export function MarkdownViewer({
   title,
   markdown,
   isLoading = false,
+  subtitle,
+  footer,
+  cardClassName,
 }: MarkdownViewerProps) {
   const markdownComponents: Components = {
     // Custom heading styling
@@ -74,17 +81,20 @@ export function MarkdownViewer({
   };
 
   return (
-    <Card className="h-full">
+    <Card className={cn("h-full flex flex-col", cardClassName)}>
       <CardHeader className="pb-4">
         <CardTitle className="text-2xl font-bold tracking-tight">{title}</CardTitle>
+        {subtitle && (
+          <p className="text-sm text-gray-500 dark:text-gray-400">{subtitle}</p>
+        )}
       </CardHeader>
-      <CardContent className="p-6">
+      <CardContent className="p-6 flex-1 flex flex-col">
         {isLoading ? (
           <div className="text-center text-gray-500 p-4">
             Parsing with {title}...
           </div>
         ) : markdown ? (
-          <div className="space-y-4">
+          <div className="flex-1 flex flex-col">
             <div className="prose dark:prose-invert max-w-none prose-lg prose-headings:font-bold prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl text-[17px] leading-relaxed">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
@@ -94,7 +104,7 @@ export function MarkdownViewer({
                 {markdown}
               </ReactMarkdown>
             </div>
-            <details className="rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 text-sm text-gray-600 dark:text-gray-300">
+            <details className="mt-4 rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 text-sm text-gray-600 dark:text-gray-300">
               <summary className="cursor-pointer font-medium">
                 Original Markdown / HTML
               </summary>
@@ -106,6 +116,12 @@ export function MarkdownViewer({
         ) : (
           <div className="text-center text-gray-400 p-4 italic">
             No content for this page
+          </div>
+        )}
+
+        {footer && (
+          <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-800">
+            {footer}
           </div>
         )}
       </CardContent>

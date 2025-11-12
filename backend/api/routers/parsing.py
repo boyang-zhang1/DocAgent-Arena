@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from prisma import Prisma
+from prisma import Prisma, Json
 from pypdf import PdfReader, PdfWriter
 
 from api.models.parsing import (
@@ -49,6 +49,7 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 DEFAULT_BATTLE_PROVIDERS = ["llamaindex", "reducto"]
 BATTLE_LABELS = ["A", "B", "C", "D"]
 BATTLE_STORAGE_PREFIX = "user-upload"
+PENDING_BATTLE_TASKS: Dict[str, asyncio.Task] = {}
 
 
 def _extract_single_page(pdf_path: Path, page_number: int) -> Path:
@@ -101,9 +102,7 @@ async def _persist_battle_run(
 ):
     """Upload battle artifacts and persist run/results asynchronously."""
 
-    if prisma_client is None:
-        logger.warning("Prisma client unavailable; skipping battle persistence")
-        return
+    client = prisma_client
 
     storage_url: Optional[str] = None
     storage_path = f"{BATTLE_STORAGE_PREFIX}/{battle_id}.pdf"
@@ -142,7 +141,7 @@ async def _persist_battle_run(
                 "page_number": page.page_number,
                 "markdown": page.markdown,
                 "images": page.images,
-                "metadata": page.metadata,
+                "metadata": _jsonify(page.metadata),
             }
             for page in result.pages
         ]
@@ -153,9 +152,9 @@ async def _persist_battle_run(
             {
                 "provider": result.provider,
                 "label": provider_to_label.get(result.provider, result.provider),
-                "content": {"pages": pages_payload},
+                "content": Json({"pages": pages_payload}),
                 "totalPages": result.total_pages,
-                "usage": usage,
+                "usage": Json(_jsonify(usage)),
                 "costCredits": cost_credits,
                 "costUsd": cost_usd,
                 "processingTime": result.processing_time,
@@ -164,16 +163,16 @@ async def _persist_battle_run(
 
     status = "SUCCESS" if has_success else "ERROR"
 
-    metadata = {
+    metadata = _jsonify({
         "configs": configs,
         "provider_labels": provider_to_label,
         "label_providers": {assignment.label: assignment.provider for assignment in assignments},
         "assignments": [assignment.model_dump() for assignment in assignments],
         "battle_mode": True,
-    }
+    })
 
     try:
-        await prisma_client.parsebattlerun.create(
+        await client.parsebattlerun.create(
             data={
                 "id": battle_id,
                 "uploadFileId": upload_file_id,
@@ -183,7 +182,7 @@ async def _persist_battle_run(
                 "pageNumber": page_number,
                 "providers": providers,
                 "status": status,
-                "metadata": metadata,
+                "metadata": Json(metadata),
                 "providerResults": {"create": provider_entries},
             }
         )
@@ -591,7 +590,7 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
         )
 
         # Fire-and-forget persistence so the response is not blocked
-        asyncio.create_task(
+        task = asyncio.create_task(
             _persist_battle_run(
                 prisma_client=db,
                 battle_id=battle_id,
@@ -606,6 +605,8 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
                 configs=request.configs,
             )
         )
+        PENDING_BATTLE_TASKS[battle_id] = task
+        task.add_done_callback(lambda _: PENDING_BATTLE_TASKS.pop(battle_id, None))
 
     return ParseCompareResponse(file_id=request.file_id, results=results, battle=battle_metadata)
 
@@ -614,12 +615,7 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
 async def submit_battle_feedback(request: BattleFeedbackRequest, db: Prisma = Depends(get_db)):
     """Persist user selection for a completed battle."""
 
-    if db is None:
-        raise HTTPException(status_code=500, detail="Database unavailable")
-
-    battle = await db.parsebattlerun.find_unique(
-        where={"id": request.battle_id}
-    )
+    battle = await _ensure_battle_persisted(request.battle_id, db)
 
     if not battle:
         raise HTTPException(status_code=404, detail="Battle run not found")
@@ -681,6 +677,28 @@ async def submit_battle_feedback(request: BattleFeedbackRequest, db: Prisma = De
         comment=record.comment,
         assignments=assignments,
     )
+
+
+async def _ensure_battle_persisted(battle_id: str, prisma_client: Prisma, timeout: float = 5.0):
+    """Wait for pending persistence task to finish before querying battle."""
+    client = prisma_client
+
+    battle = await client.parsebattlerun.find_unique(where={"id": battle_id})
+    if battle:
+        return battle
+
+    pending_task = PENDING_BATTLE_TASKS.get(battle_id)
+    if not pending_task:
+        return None
+
+    try:
+        await asyncio.wait_for(asyncio.shield(pending_task), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning("Timed out waiting for battle %s persistence", battle_id)
+    except Exception as exc:
+        logger.error("Battle persistence task for %s failed: %s", battle_id, exc)
+
+    return await client.parsebattlerun.find_unique(where={"id": battle_id})
 
 
 @router.get("/file/{file_id}")
@@ -747,3 +765,18 @@ async def calculate_cost(request: ParseCompareResponse):
         costs=costs,
         total_usd=total_usd,
     )
+def _jsonify(value: Any) -> Any:
+    """Convert arbitrary objects to JSON-serializable structures."""
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _jsonify(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonify(v) for v in value]
+    return str(value)

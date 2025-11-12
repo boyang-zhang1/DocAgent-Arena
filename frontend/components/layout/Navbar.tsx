@@ -23,6 +23,11 @@ export function Navbar() {
       isActive: pathname?.startsWith('/parse'),
     },
     {
+      href: '/battle',
+      label: 'Battle',
+      isActive: pathname?.startsWith('/battle'),
+    },
+    {
       href: '/dashboard',
       label: 'Run Benchmark',
       isActive: pathname?.startsWith('/dashboard'),

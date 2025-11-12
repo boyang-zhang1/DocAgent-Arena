@@ -17,6 +17,8 @@ import type {
   ParseCompareRequest,
   ParseCompareResponse,
   CostComparisonResponse,
+  BattleFeedbackRequest,
+  BattleFeedbackResponse,
 } from '@/types/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -210,18 +212,33 @@ class ApiClient {
    * @param configs Optional configurations for each provider
    * @returns Parse results from each provider
    */
-  async compareParses(
-    fileId: string,
-    providers: string[],
-    configs?: Record<string, any>
-  ): Promise<ParseCompareResponse> {
+  async compareParses(params: {
+    fileId: string;
+    providers?: string[];
+    configs?: Record<string, any>;
+    pageNumber?: number;
+    filename?: string;
+  }): Promise<ParseCompareResponse> {
+    const payload: ParseCompareRequest = {
+      file_id: params.fileId,
+    };
+
+    if (params.providers !== undefined) {
+      payload.providers = params.providers;
+    }
+    if (params.configs && Object.keys(params.configs).length > 0) {
+      payload.configs = params.configs;
+    }
+    if (typeof params.pageNumber === 'number') {
+      payload.page_number = params.pageNumber;
+    }
+    if (params.filename) {
+      payload.filename = params.filename;
+    }
+
     return this.fetchWithError<ParseCompareResponse>('/api/v1/parse/compare', {
       method: 'POST',
-      body: JSON.stringify({
-        file_id: fileId,
-        providers,
-        configs: configs || {},
-      }),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -235,6 +252,15 @@ class ApiClient {
     return this.fetchWithError<CostComparisonResponse>('/api/v1/parse/calculate-cost', {
       method: 'POST',
       body: JSON.stringify(parseResults),
+    });
+  }
+
+  async submitBattleFeedback(
+    payload: BattleFeedbackRequest
+  ): Promise<BattleFeedbackResponse> {
+    return this.fetchWithError<BattleFeedbackResponse>('/api/v1/parse/battle-feedback', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   }
 
