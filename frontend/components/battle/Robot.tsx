@@ -151,39 +151,6 @@ export function Robot({
     },
   };
 
-  // Antenna animation
-  const antennaVariants = {
-    fighting: {
-      rotate: shouldReduceMotion ? 0 : [-10, 10, -10],
-      transition: shouldReduceMotion
-        ? { duration: 0 }
-        : {
-            repeat: Infinity,
-            duration: 0.4,
-            ease: "easeInOut" as const,
-          },
-    },
-    idle: {
-      rotate: shouldReduceMotion ? 0 : [-5, 5, -5],
-      transition: shouldReduceMotion
-        ? { duration: 0 }
-        : {
-            repeat: Infinity,
-            duration: 1.5,
-            ease: "easeInOut" as const,
-          },
-    },
-    celebrating: {
-      rotate: shouldReduceMotion ? 0 : [0, -20, 20, -20, 20, 0],
-      transition: {
-        duration: shouldReduceMotion ? 0 : 0.8,
-      },
-    },
-    defeated: {
-      rotate: position === "left" ? -45 : 45,
-      opacity: 0.5,
-    },
-  };
 
   return (
     <motion.div
@@ -200,45 +167,26 @@ export function Robot({
         viewBox="0 0 120 140"
         className="overflow-visible"
       >
-        {/* Antenna */}
-        <motion.g
-          key={`antenna-${state}`} // Force reset on state change
-          initial={{ rotate: 0 }} // RESET rotation first
-          variants={antennaVariants}
-          animate={state}
-        >
-          <line
-            x1="60"
-            y1="18"
-            x2="60"
-            y2="5"
-            stroke={color}
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <circle cx="60" cy="3" r="3" fill={color} />
-        </motion.g>
-
         {/* Head - always show frame, swap face/logo inside */}
         <g className="robot-head">
-          {/* Head rectangle frame - THINNER stroke */}
+          {/* Head rectangle frame - Medium-sized head */}
           <rect
-            x="40"
-            y="20"
-            width="40"
-            height="35"
-            rx="8"
+            x="35"
+            y="18"
+            width="50"
+            height="42"
+            rx="9"
             fill="none"
             stroke={color}
             strokeWidth="1.5"
           />
           {/* Head background fill */}
           <rect
-            x="41"
-            y="21"
-            width="38"
-            height="33"
-            rx="7"
+            x="36"
+            y="19"
+            width="48"
+            height="40"
+            rx="8"
             fill={color}
             opacity="0.9"
           />
@@ -252,20 +200,20 @@ export function Robot({
                 exit={{ opacity: 0, scale: 0.5 }}
                 transition={{ duration: 0.3 }}
               >
-                {/* Eyes */}
-                <circle cx="50" cy="35" r="4" fill="white" />
-                <circle cx="70" cy="35" r="4" fill="white" />
+                {/* Eyes - adjusted for medium head */}
+                <circle cx="50" cy="32" r="4.5" fill="white" />
+                <circle cx="70" cy="32" r="4.5" fill="white" />
                 {/* Eye pupils */}
-                <circle cx="50" cy="35" r="2" fill="#1f2937" />
-                <circle cx="70" cy="35" r="2" fill="#1f2937" />
+                <circle cx="50" cy="32" r="2.2" fill="#1f2937" />
+                <circle cx="70" cy="32" r="2.2" fill="#1f2937" />
                 {/* Mouth line */}
                 <line
-                  x1="48"
-                  y1="45"
-                  x2="72"
-                  y2="45"
+                  x1="47"
+                  y1="48"
+                  x2="73"
+                  y2="48"
                   stroke="white"
-                  strokeWidth="2"
+                  strokeWidth="2.3"
                   strokeLinecap="round"
                 />
               </motion.g>
@@ -276,10 +224,10 @@ export function Robot({
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.4, delay: 0.2 }}
               >
-                {/* LARGER logo inside head frame */}
-                <foreignObject x="42" y="22" width="36" height="31">
+                {/* Logo inside medium-sized head frame */}
+                <foreignObject x="38" y="21" width="44" height="36">
                   <div className="flex items-center justify-center h-full bg-white/95 dark:bg-gray-900/95 rounded">
-                    <ProviderLabel provider={provider} size={32} hideName={true} />
+                    <ProviderLabel provider={provider} size={38} hideName={true} />
                   </div>
                 </foreignObject>
               </motion.g>
@@ -290,7 +238,7 @@ export function Robot({
         {/* Body */}
         <rect
           x="45"
-          y="60"
+          y="63"
           width="30"
           height="40"
           rx="4"
@@ -300,7 +248,7 @@ export function Robot({
         {/* Chest panel */}
         <rect
           x="52"
-          y="68"
+          y="71"
           width="16"
           height="12"
           rx="2"
@@ -308,11 +256,11 @@ export function Robot({
           opacity="0.3"
         />
         {/* Chest indicator lights */}
-        <circle cx="56" cy="88" r="2" fill="#10b981" opacity="0.8" />
-        <circle cx="64" cy="88" r="2" fill="#3b82f6" opacity="0.8" />
+        <circle cx="56" cy="91" r="2" fill="#10b981" opacity="0.8" />
+        <circle cx="64" cy="91" r="2" fill="#3b82f6" opacity="0.8" />
 
-        {/* Left Arm - rotates from LEFT shoulder at (45, 67) */}
-        <g transform="translate(45, 67)">
+        {/* Left Arm - rotates from LEFT shoulder at (45, 70) */}
+        <g transform="translate(45, 70)">
           <motion.g
             key={`left-${state}`} // Force reset on state change
             initial={{ rotate: 0 }} // RESET rotation first
@@ -333,8 +281,8 @@ export function Robot({
           </motion.g>
         </g>
 
-        {/* Right Arm - rotates from RIGHT shoulder at (75, 67) */}
-        <g transform="translate(75, 67)">
+        {/* Right Arm - rotates from RIGHT shoulder at (75, 70) */}
+        <g transform="translate(75, 70)">
           <motion.g
             key={`right-${state}`} // Force reset on state change
             initial={{ rotate: 0 }} // RESET rotation first
@@ -359,18 +307,18 @@ export function Robot({
         <g>
           <rect
             x="48"
-            y="102"
+            y="105"
             width="10"
-            height="24"
+            height="22"
             rx="2"
             fill={color}
             opacity="0.85"
           />
           <rect
             x="62"
-            y="102"
+            y="105"
             width="10"
-            height="24"
+            height="22"
             rx="2"
             fill={color}
             opacity="0.85"
@@ -378,7 +326,7 @@ export function Robot({
           {/* Feet */}
           <rect
             x="46"
-            y="126"
+            y="127"
             width="14"
             height="6"
             rx="2"
@@ -386,7 +334,7 @@ export function Robot({
           />
           <rect
             x="60"
-            y="126"
+            y="127"
             width="14"
             height="6"
             rx="2"
@@ -401,7 +349,7 @@ export function Robot({
           className="absolute inset-0 rounded-full blur-xl"
           style={{ backgroundColor: color }}
           initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: [0.3, 0.5, 0.3], scale: [1.2, 1.4, 1.2] }}
+          animate={{ opacity: [0.15, 0.25, 0.15], scale: [1.2, 1.4, 1.2] }}
           exit={{ opacity: 0 }}
           transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
         />

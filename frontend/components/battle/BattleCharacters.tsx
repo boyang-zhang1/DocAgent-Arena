@@ -36,51 +36,79 @@ export function BattleCharacters({
   const getLeftRobotState = (): RobotState => {
     if (isParsing) return "fighting";
 
-    // If preferredLabels is set, show animation (BEFORE or AFTER reveal)
-    if (preferredLabels === null) return "idle";
-
-    const isLeftPreferred = preferredLabels.includes(leftAssignment.label);
-
-    // Both good = both celebrate
-    if (preferredLabels.length === 2) {
-      return "celebrating";
-    }
-
-    // Both bad = both defeated
-    if (preferredLabels.length === 0) {
+    // If feedbackChoice is set (but not submitted yet), show verdict animation
+    if (preferredLabels === null && feedbackChoice) {
+      // User picked a verdict, show animation immediately
+      if (feedbackChoice === "BOTH_GOOD") return "celebrating";
+      if (feedbackChoice === "BOTH_BAD") return "defeated";
+      // Left is better
+      if (feedbackChoice === leftAssignment.label) return "celebrating";
+      // Right is better (left lost)
       return "defeated";
     }
 
-    // Left won
-    if (isLeftPreferred) return "celebrating";
+    // If preferredLabels is set, show animation (AFTER submission and reveal)
+    if (preferredLabels !== null) {
+      const isLeftPreferred = preferredLabels.includes(leftAssignment.label);
 
-    // Left lost
-    return "defeated";
+      // Both good = both celebrate
+      if (preferredLabels.length === 2) {
+        return "celebrating";
+      }
+
+      // Both bad = both defeated
+      if (preferredLabels.length === 0) {
+        return "defeated";
+      }
+
+      // Left won
+      if (isLeftPreferred) return "celebrating";
+
+      // Left lost
+      return "defeated";
+    }
+
+    // Default: idle (waiting for user feedback)
+    return "idle";
   };
 
   const getRightRobotState = (): RobotState => {
     if (isParsing) return "fighting";
 
-    // If preferredLabels is set, show animation (BEFORE or AFTER reveal)
-    if (preferredLabels === null) return "idle";
-
-    const isRightPreferred = preferredLabels.includes(rightAssignment.label);
-
-    // Both good = both celebrate
-    if (preferredLabels.length === 2) {
-      return "celebrating";
-    }
-
-    // Both bad = both defeated
-    if (preferredLabels.length === 0) {
+    // If feedbackChoice is set (but not submitted yet), show verdict animation
+    if (preferredLabels === null && feedbackChoice) {
+      // User picked a verdict, show animation immediately
+      if (feedbackChoice === "BOTH_GOOD") return "celebrating";
+      if (feedbackChoice === "BOTH_BAD") return "defeated";
+      // Right is better
+      if (feedbackChoice === rightAssignment.label) return "celebrating";
+      // Left is better (right lost)
       return "defeated";
     }
 
-    // Right won
-    if (isRightPreferred) return "celebrating";
+    // If preferredLabels is set, show animation (AFTER submission and reveal)
+    if (preferredLabels !== null) {
+      const isRightPreferred = preferredLabels.includes(rightAssignment.label);
 
-    // Right lost
-    return "defeated";
+      // Both good = both celebrate
+      if (preferredLabels.length === 2) {
+        return "celebrating";
+      }
+
+      // Both bad = both defeated
+      if (preferredLabels.length === 0) {
+        return "defeated";
+      }
+
+      // Right won
+      if (isRightPreferred) return "celebrating";
+
+      // Right lost
+      return "defeated";
+    }
+
+    // Default: idle (waiting for user feedback)
+    return "idle";
   };
 
   const leftState = getLeftRobotState();
@@ -91,12 +119,12 @@ export function BattleCharacters({
 
   return (
     <motion.div
-      className="flex items-center justify-center py-6 md:py-8 mb-6 overflow-visible"
+      className="flex items-center justify-center py-1 mb-2 overflow-visible"
       initial={{ opacity: 0, y: -20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
-      <div className="relative flex flex-col sm:flex-row items-center gap-6 sm:gap-8 md:gap-12 overflow-visible">
+      <div className="relative flex flex-col sm:flex-row items-center gap-4 sm:gap-6 md:gap-8 overflow-visible">
         {/* Left Robot */}
         <Robot
           position="left"
@@ -107,7 +135,7 @@ export function BattleCharacters({
         />
 
         {/* VS Badge / Fighting Effects */}
-        <div className="relative flex items-center justify-center min-w-[200px] min-h-[200px] overflow-visible">
+        <div className="relative flex items-center justify-center min-w-[160px] min-h-[160px] overflow-visible">
           {showVsBadge && (
             <>
               {/* Fighting effects (lightning, fire, boom) */}

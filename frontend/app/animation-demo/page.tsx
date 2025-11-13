@@ -4,6 +4,7 @@ import { useState } from "react";
 import { BattleCharacters } from "@/components/battle/BattleCharacters";
 import { Button } from "@/components/ui/button";
 import { Swords } from "lucide-react";
+import { ContactIcons } from "@/components/ui/ContactIcons";
 
 type VerdictState = "fighting" | "idle" | "left_better" | "right_better" | "both_good" | "both_bad";
 
@@ -171,6 +172,8 @@ export default function AnimationDemoPage() {
           ← Back to Battle Page
         </a>
       </div>
+
+      <ContactIcons />
     </div>
   );
 }
