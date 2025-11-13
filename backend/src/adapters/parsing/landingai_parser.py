@@ -15,12 +15,14 @@ from .base import BaseParseAdapter, PageResult, ParseResult
 class LandingAIParser(BaseParseAdapter):
     """Parser using LandingAI's Vision Agent API."""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, model: str = "dpt-2", credits_per_page: float = 3.0):
         """
         Initialize LandingAI parser.
 
         Args:
             api_key: API key for LandingAI (required).
+            model: LandingAI model to use (default: "dpt-2").
+            credits_per_page: Credits per page for the selected model (default: 3.0).
 
         Raises:
             ValueError: If api_key is empty or None.
@@ -28,6 +30,8 @@ class LandingAIParser(BaseParseAdapter):
         if not api_key:
             raise ValueError("LandingAI API key is required")
         self.api_key = api_key
+        self.model = model
+        self.credits_per_page = credits_per_page
 
     def _normalize_markdown(self, markdown: str) -> str:
         """
@@ -115,10 +119,10 @@ class LandingAIParser(BaseParseAdapter):
         # Initialize LandingAI client
         client = LandingAIADE(apikey=self.api_key)
 
-        # Parse the PDF using dpt-2 model
+        # Parse the PDF using configured model
         parse_response = client.parse(
             document=pdf_path,
-            model="dpt-2",
+            model=self.model,
         )
 
         # Convert response to dict if it's not already
@@ -196,7 +200,7 @@ class LandingAIParser(BaseParseAdapter):
             processing_time=processing_time,
             usage={
                 "num_pages": total_pages,
-                "credits_per_page": 3,  # Fixed rate for LandingAI
-                "total_credits": total_pages * 3,
+                "credits_per_page": self.credits_per_page,
+                "total_credits": total_pages * self.credits_per_page,
             },
         )
