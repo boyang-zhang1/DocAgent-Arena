@@ -136,26 +136,41 @@ export interface ProviderDetailResponse {
 // PDF Parsing Types
 
 export interface LlamaIndexConfig {
-  parse_mode: string;
-  model: string;
+  mode: string;
+  parse_mode?: string;
+  model?: string;
 }
 
 export interface ReductoConfig {
-  mode: string;  // "standard" or "complex"
-  summarize_figures: boolean;
+  mode: string;
+  summarize_figures?: boolean;
 }
 
 export interface LandingAIConfig {
-  model: string;  // Currently only "dpt-2"
+  mode: string;
+  model?: string;
 }
 
 export type ProviderConfig = LlamaIndexConfig | ReductoConfig | LandingAIConfig;
 
+export interface BattleAssignment {
+  label: string;
+  provider: string;
+}
+
+export interface BattleMetadata {
+  battle_id: string;
+  assignments: BattleAssignment[];
+}
+
+export type BattlePreference = 'A_BETTER' | 'B_BETTER' | 'BOTH_GOOD' | 'BOTH_BAD';
+
 export interface ParseCompareRequest {
   file_id: string;
-  providers: string[];
-  api_keys: Record<string, string>;
+  providers?: string[];
   configs?: Record<string, any>;
+  page_number?: number;
+  filename?: string;
 }
 
 export interface PageData {
@@ -175,6 +190,7 @@ export interface ProviderParseResult {
 export interface ParseCompareResponse {
   file_id: string;
   results: Record<string, ProviderParseResult>;
+  battle?: BattleMetadata;
 }
 
 export interface UploadResponse {
@@ -206,6 +222,20 @@ export interface CostComparisonResponse {
   total_usd: number;
 }
 
+export interface BattleFeedbackRequest {
+  battle_id: string;
+  preference?: BattlePreference;
+  preferred_labels?: string[];
+  comment?: string;
+}
+
+export interface BattleFeedbackResponse {
+  battle_id: string;
+  preferred_labels: string[];
+  comment?: string;
+  assignments: BattleAssignment[];
+}
+
 // Pricing configuration types for frontend display
 export interface ModelOption {
   label: string;
@@ -213,10 +243,55 @@ export interface ModelOption {
   credits_per_page: number;
   usd_per_page: number;
   description?: string;
+  config: Record<string, any>;
 }
 
 export interface ProviderPricingInfo {
   provider: string;
   models: ModelOption[];
   usd_per_credit: number;
+}
+
+// Battle History Types
+export interface BattleHistoryItem {
+  battle_id: string;
+  original_name: string;
+  page_number: number;
+  created_at: string;
+  winner?: string | null;
+  preferred_labels?: string[] | null;
+  model_display_names?: Record<string, string> | null;
+}
+
+export interface BattleHistoryResponse {
+  battles: BattleHistoryItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface BattleProviderDetail {
+  provider: string;
+  label: string;
+  content: ProviderParseResult;
+  cost_usd?: number | null;
+  cost_credits?: number | null;
+}
+
+export interface BattleDetailResponse {
+  battle_id: string;
+  original_name: string;
+  page_number: number;
+  upload_file_id: string;
+  storage_url?: string | null;
+  storage_path?: string | null;
+  created_at: string;
+  providers: BattleProviderDetail[];
+  feedback?: {
+    preferred_labels: string[];
+    comment?: string | null;
+    revealed_at?: string | null;
+  } | null;
+  assignments: BattleAssignment[];
+  provider_configs?: Record<string, LlamaIndexConfig | ReductoConfig | Record<string, any>> | null;
 }

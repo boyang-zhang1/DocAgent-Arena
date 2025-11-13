@@ -5,44 +5,60 @@ llamaindex:
   # LlamaIndex pricing: 1 USD = 1000 credits
   usd_per_credit: 0.001
 
-  # Model-specific pricing based on parse_mode and model combination
+  # Model-specific pricing defined by mode identifier
   models:
-    # parse_page_with_llm mode
-    - parse_mode: "parse_page_with_llm"
-      model: "default"
+    - mode: "cost-effective"
+      label: "Cost-effective"
       credits_per_page: 3
       description: "LLM parsing"
+      api:
+        parse_mode: "parse_page_with_llm"
+        model: "default"
 
-    # parse_page_with_agent mode
-    - parse_mode: "parse_page_with_agent"
-      model: "openai-gpt-4-1-mini"
-      credits_per_page: 20
+    - mode: "agentic"
+      label: "Agentic"
+      credits_per_page: 10
       description: "GPT-4 mini agent parsing"
+      api:
+        parse_mode: "parse_page_with_agent"
+        model: "openai-gpt-4-1-mini"
 
-    - parse_mode: "parse_page_with_agent"
-      model: "anthropic-sonnet-4.0"
+    - mode: "agentic-plus"
+      label: "Agentic Plus"
       credits_per_page: 90
       description: "Sonnet 4.0 agent parsing"
+      api:
+        parse_mode: "parse_page_with_agent"
+        model: "anthropic-sonnet-4.0"
 
 reducto:
   # Reducto pricing: 0.015 USD per credit
   usd_per_credit: 0.015
 
-  # Model-specific pricing based on VLM enhancement
+  # Model-specific pricing based on mode identifier
   models:
     - mode: "standard"
-      summarize_figures: false
+      label: "Standard"
       credits_per_page: 1
       description: "Standard Page (VLM enhance off)"
+      api:
+        summarize_figures: false
 
     - mode: "complex"
-      summarize_figures: true
+      label: "Complex VLM"
       credits_per_page: 2
       description: "Complex Page (VLM enhance on)"
+      api:
+        summarize_figures: true
 
 landingai:
   # LandingAI pricing: 0.01 USD per credit
   usd_per_credit: 0.01
 
-  # Fixed rate: 3 credits per page
-  credits_per_page: 3
+  models:
+    - mode: "dpt-2"
+      label: "DPT-2"
+      credits_per_page: 3
+      description: "Default LandingAI parsing"
+      api:
+        model: "dpt-2"

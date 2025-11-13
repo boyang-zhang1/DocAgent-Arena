@@ -8,14 +8,9 @@ export function Navbar() {
 
   const links = [
     {
-      href: '/datasets',
-      label: 'Datasets',
-      isActive: pathname === '/' || pathname?.startsWith('/datasets'),
-    },
-    {
-      href: '/results',
-      label: 'Results',
-      isActive: pathname?.startsWith('/results'),
+      href: '/battle',
+      label: 'Parse Battle',
+      isActive: pathname === '/' || pathname?.startsWith('/battle'),
     },
     {
       href: '/parse',
@@ -23,9 +18,9 @@ export function Navbar() {
       isActive: pathname?.startsWith('/parse'),
     },
     {
-      href: '/dashboard',
-      label: 'Run Benchmark',
-      isActive: pathname?.startsWith('/dashboard'),
+      href: '/datasets',
+      label: 'Datasets',
+      isActive: pathname?.startsWith('/datasets') || pathname?.startsWith('/results'),
     },
   ];
 
@@ -34,7 +29,7 @@ export function Navbar() {
       <div className="container mx-auto px-4 py-4">
         <div className="flex items-center justify-between">
           {/* Logo / Brand */}
-          <Link href="/datasets" className="text-2xl font-bold">
+          <Link href="/battle" className="text-2xl font-bold">
             RAGRace
           </Link>
 

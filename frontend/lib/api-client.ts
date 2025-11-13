@@ -17,6 +17,11 @@ import type {
   ParseCompareRequest,
   ParseCompareResponse,
   CostComparisonResponse,
+  BattleFeedbackRequest,
+  BattleFeedbackResponse,
+  BattleHistoryResponse,
+  BattleDetailResponse,
+  ProviderPricingInfo,
 } from '@/types/api';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -192,29 +197,55 @@ class ApiClient {
   }
 
   /**
+   * Get list of available parsing providers
+   *
+   * @returns Array of provider names
+   */
+  async getAvailableProviders(): Promise<string[]> {
+    return this.fetchWithError<string[]>('/api/v1/parse/available-providers', {
+      method: 'GET',
+    });
+  }
+
+  async getProviderPricing(): Promise<ProviderPricingInfo[]> {
+    return this.fetchWithError<ProviderPricingInfo[]>('/api/v1/parse/pricing');
+  }
+
+  /**
    * Compare PDF parsing across multiple providers
    *
    * @param fileId UUID of uploaded file
-   * @param apiKeys API keys for each provider
+   * @param providers List of providers to use
    * @param configs Optional configurations for each provider
    * @returns Parse results from each provider
    */
-  async compareParses(
-    fileId: string,
-    apiKeys: Record<string, string>,
-    configs?: Record<string, any>
-  ): Promise<ParseCompareResponse> {
-    // Determine providers from api_keys
-    const providers = Object.keys(apiKeys);
+  async compareParses(params: {
+    fileId: string;
+    providers?: string[];
+    configs?: Record<string, any>;
+    pageNumber?: number;
+    filename?: string;
+  }): Promise<ParseCompareResponse> {
+    const payload: ParseCompareRequest = {
+      file_id: params.fileId,
+    };
+
+    if (params.providers !== undefined) {
+      payload.providers = params.providers;
+    }
+    if (params.configs && Object.keys(params.configs).length > 0) {
+      payload.configs = params.configs;
+    }
+    if (typeof params.pageNumber === 'number') {
+      payload.page_number = params.pageNumber;
+    }
+    if (params.filename) {
+      payload.filename = params.filename;
+    }
 
     return this.fetchWithError<ParseCompareResponse>('/api/v1/parse/compare', {
       method: 'POST',
-      body: JSON.stringify({
-        file_id: fileId,
-        providers,
-        api_keys: apiKeys,
-        configs: configs || {},
-      }),
+      body: JSON.stringify(payload),
     });
   }
 
@@ -229,6 +260,44 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(parseResults),
     });
+  }
+
+  async submitBattleFeedback(
+    payload: BattleFeedbackRequest
+  ): Promise<BattleFeedbackResponse> {
+    return this.fetchWithError<BattleFeedbackResponse>('/api/v1/parse/battle-feedback', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * Get battle history with pagination
+   *
+   * @param page Page number (1-indexed)
+   * @param limit Number of items per page
+   * @returns Paginated battle history
+   */
+  async getBattleHistory(page: number = 1, limit: number = 10): Promise<BattleHistoryResponse> {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    });
+    return this.fetchWithError<BattleHistoryResponse>(
+      `/api/v1/parse/battles?${params.toString()}`
+    );
+  }
+
+  /**
+   * Get complete battle details
+   *
+   * @param battleId UUID of the battle
+   * @returns Full battle details with providers and feedback
+   */
+  async getBattleDetail(battleId: string): Promise<BattleDetailResponse> {
+    return this.fetchWithError<BattleDetailResponse>(
+      `/api/v1/parse/battles/${battleId}`
+    );
   }
 
   /**

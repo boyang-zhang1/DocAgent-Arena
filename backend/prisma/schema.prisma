@@ -141,6 +141,11 @@ enum ProviderStatus {
   ERROR
 }
 
+enum BattleRunStatus {
+  SUCCESS
+  ERROR
+}
+
 // Question Results (per provider result, per question)
 model QuestionResult {
   id                  String         @id @default(uuid())
@@ -177,4 +182,57 @@ model ApiRequest {
   @@index([userId])
   @@index([createdAt])
   @@map("api_requests")
+}
+
+model ParseBattleRun {
+  id             String           @id @default(uuid())
+  uploadFileId   String           @map("upload_file_id")
+  originalName   String?          @map("original_name")
+  storagePath    String           @map("storage_path")
+  storageUrl     String?          @map("storage_url")
+  pageNumber     Int              @map("page_number")
+  providers      String[]
+  status         BattleRunStatus
+  pageCredits    Float?           @map("page_credits")
+  metadata       Json             @default("{}")
+  startedAt      DateTime?        @map("started_at")
+  completedAt    DateTime?        @map("completed_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  providerResults BattleProviderResult[]
+  feedback        BattleFeedback?
+
+  @@index([status])
+  @@map("parse_battle_runs")
+}
+
+model BattleProviderResult {
+  id             String          @id @default(uuid())
+  battleId       String          @map("battle_id")
+  battle         ParseBattleRun  @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  provider       String
+  label          String
+  content        Json            @default("{}")
+  totalPages     Int             @map("total_pages")
+  usage          Json            @default("{}")
+  costCredits    Float?          @map("cost_credits")
+  costUsd        Float?          @map("cost_usd")
+  processingTime Float?          @map("processing_time")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  @@index([battleId])
+  @@map("battle_provider_results")
+}
+
+model BattleFeedback {
+  id          String           @id @default(uuid())
+  battleId    String           @map("battle_id")
+  battle      ParseBattleRun   @relation(fields: [battleId], references: [id], onDelete: Cascade)
+  preferredLabels String[]     @map("preferred_labels")
+  comment     String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  revealedAt  DateTime?        @map("revealed_at")
+
+  @@unique([battleId])
+  @@map("battle_feedback")
 }
