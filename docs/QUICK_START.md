@@ -194,9 +194,9 @@ Typical costs for first battle (1 page):
 ## What's Next?
 
 - **[Battle Mode Guide](BATTLE_MODE.md)** - Deep dive into blind testing
-- **[Pricing Guide](PRICING.md)** - Understanding costs and optimization
-- **[Parsing Providers](PARSING_PROVIDERS.md)** - Provider specifications
+- **[Parse Comparison](PARSE_COMPARISON.md)** - Full document parsing
 - **[Architecture](ARCHITECTURE.md)** - How DocAgent-Arena works
+- **[Development](DEVELOPMENT.md)** - Adding new providers
 
 ## Getting Help
 

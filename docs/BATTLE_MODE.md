@@ -580,6 +580,6 @@ GET /api/v1/parsing/battles/{battle_id}
 ## Related Documentation
 
 - **[Quick Start](QUICK_START.md)** - Get battle mode running in 5 minutes
-- **[Pricing Guide](PRICING.md)** - Detailed cost breakdown and optimization
-- **[Parsing Providers](PARSING_PROVIDERS.md)** - Provider specifications
+- **[Parse Comparison](PARSE_COMPARISON.md)** - Full document parsing mode
 - **[Architecture](ARCHITECTURE.md)** - Battle system technical architecture
+- **[Development](DEVELOPMENT.md)** - Adding new parsers

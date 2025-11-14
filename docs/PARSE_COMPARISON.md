@@ -460,6 +460,6 @@ Returns markdown file.
 ## Related Documentation
 
 - **[Battle Mode](BATTLE_MODE.md)** - Blind A/B testing alternative
-- **[Parsing Providers](PARSING_PROVIDERS.md)** - Provider specifications
-- **[Pricing Guide](PRICING.md)** - Cost calculator and optimization
 - **[Quick Start](QUICK_START.md)** - Get started in 5 minutes
+- **[Architecture](ARCHITECTURE.md)** - Technical details
+- **[Development](DEVELOPMENT.md)** - Adding new parsers

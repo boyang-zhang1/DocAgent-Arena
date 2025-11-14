@@ -28,7 +28,7 @@ Comprehensive full-document parsing comparison:
 [Learn more about Parse Comparison →](docs/PARSE_COMPARISON.md)
 
 ### RAG Benchmarking
-Also supports automated RAG provider evaluation on research datasets (Qasper, PolicyQA, SQuAD 2.0) with Ragas metrics. [See RAG documentation →](docs/RAG_BENCHMARKING.md)
+Also supports automated RAG provider evaluation on research datasets (Qasper, PolicyQA, SQuAD 2.0) with Ragas metrics.
 
 ## Quick Start
 
@@ -99,8 +99,6 @@ open http://localhost:3000/battle
 | **Reducto** | 2 modes | $0.015 - $0.030/page | Semantic chunking, figure summaries |
 | **LandingAI** | 2 modes | $0.015 - $0.030/page | 8 chunk types, grounding metadata |
 
-[Full pricing guide →](docs/PRICING.md) | [Provider details →](docs/PARSING_PROVIDERS.md)
-
 ## Architecture
 
 ```
@@ -125,13 +123,11 @@ DocAgent-Arena/
 - **[Quick Start](docs/QUICK_START.md)** - 5-minute getting started
 - **[Battle Mode](docs/BATTLE_MODE.md)** - Blind A/B testing guide
 - **[Parse Comparison](docs/PARSE_COMPARISON.md)** - Full document comparison
-- **[Pricing Guide](docs/PRICING.md)** - Cost calculator and optimization
 
 ### Technical Reference
-- **[Parsing Providers](docs/PARSING_PROVIDERS.md)** - Parser specifications
 - **[Architecture](docs/ARCHITECTURE.md)** - System design
 - **[Development](docs/DEVELOPMENT.md)** - Adding new parsers
-- **[RAG Benchmarking](docs/RAG_BENCHMARKING.md)** - Dataset evaluation
+- **[Adapters](docs/ADAPTERS.md)** - Adapter implementation guide
 
 ## Technology Stack
 
