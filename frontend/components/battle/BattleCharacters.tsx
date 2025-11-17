@@ -3,7 +3,6 @@
 import { motion } from "framer-motion";
 import { Robot } from "./Robot";
 import { FightingEffects } from "./FightingEffects";
-import { Swords } from "lucide-react";
 import type { BattleMetadata } from "@/types/api";
 
 type RobotState = "fighting" | "idle" | "celebrating" | "defeated";
@@ -134,35 +133,12 @@ export function BattleCharacters({
           color="#3b82f6" // Blue
         />
 
-        {/* VS Badge / Fighting Effects */}
+        {/* Fighting Effects */}
         <div className="relative flex items-center justify-center min-w-[160px] min-h-[160px] overflow-visible">
           {showVsBadge && (
             <>
               {/* Fighting effects (lightning, fire, boom) */}
               <FightingEffects />
-
-              {/* VS Badge */}
-              <motion.div
-                className="flex flex-col items-center gap-2 relative z-10"
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: "spring", stiffness: 200, damping: 15 }}
-              >
-                <Swords className="h-8 w-8 text-purple-500 dark:text-purple-400" />
-                <motion.span
-                  className="text-2xl font-bold text-purple-600 dark:text-purple-400"
-                  animate={{
-                    scale: [1, 1.1, 1],
-                  }}
-                  transition={{
-                    repeat: Infinity,
-                    duration: 1.5,
-                    ease: "easeInOut",
-                  }}
-                >
-                  VS
-                </motion.span>
-              </motion.div>
             </>
           )}
         </div>
