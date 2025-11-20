@@ -82,9 +82,19 @@ def _extract_single_page(pdf_path: Path, page_number: int) -> Path:
     return output_path
 
 
-def _select_battle_providers() -> List[str]:
-    """Randomly select 2 providers from all available providers for battle mode."""
-    return random.sample(ALL_PARSING_PROVIDERS, 2)
+def _select_battle_providers(allowed_providers: Optional[List[str]] = None) -> List[str]:
+    """Randomly select 2 providers from all available providers for battle mode.
+
+    Args:
+        allowed_providers: Optional list of providers to sample from. If None, uses all providers.
+
+    Returns:
+        List of 2 randomly selected provider names
+    """
+    pool = allowed_providers if allowed_providers else ALL_PARSING_PROVIDERS
+    if len(pool) < 2:
+        raise ValueError(f"Need at least 2 providers for battle mode, got {len(pool)}")
+    return random.sample(pool, 2)
 
 
 def _prepare_battle_assignments(providers: List[str]) -> (List[BattleAssignment], Dict[str, str]):
@@ -578,10 +588,26 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
             detail=f"File not found: {request.file_id}. Please upload the file first.",
         )
 
-    # Determine providers
+    # Determine providers and battle mode
     requested_providers = request.providers or []
-    battle_mode = len(requested_providers) == 0
-    providers = requested_providers or _select_battle_providers()
+
+    # Battle mode is triggered when:
+    # 1. No providers specified (empty or None) - random selection from all
+    # 2. Providers specified but page_number is set - debug mode with filtered battle
+    battle_mode = len(requested_providers) == 0 or (
+        len(requested_providers) >= 2 and request.page_number is not None
+    )
+
+    if len(requested_providers) == 0:
+        # Normal battle mode: random 2 from all providers
+        providers = _select_battle_providers()
+    elif battle_mode:
+        # Debug battle mode: random 2 from requested providers
+        providers = _select_battle_providers(allowed_providers=requested_providers)
+    else:
+        # Comparison mode: use all requested providers
+        providers = requested_providers
+
     providers = list(dict.fromkeys(providers))  # Deduplicate while preserving order
 
     if battle_mode and request.page_number is None:
@@ -684,6 +710,8 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
             if not config:
                 config = _resolve_provider_config("unstructuredio", DEFAULT_PROVIDER_CONFIGS.get("unstructuredio"), pricing_config)
             strategy = config.get("strategy", "fast")
+            vlm_model = config.get("vlm_model")
+            vlm_model_provider = config.get("vlm_model_provider")
 
             # Get API key from environment
             api_key = os.getenv("UNSTRUCTURED_API_KEY")
@@ -692,7 +720,9 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
 
             parsers["unstructuredio"] = UnstructuredParser(
                 api_key=api_key,
-                strategy=strategy
+                strategy=strategy,
+                vlm_model=vlm_model,
+                vlm_model_provider=vlm_model_provider,
             )
 
     except ValueError as e:

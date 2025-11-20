@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { FileUploadZone } from "@/components/parse/FileUploadZone";
 import { PDFViewer } from "@/components/parse/PDFViewer";
 import { PageNavigator } from "@/components/parse/PageNavigator";
@@ -20,6 +21,7 @@ import {
   type LlamaIndexConfig,
   type ReductoConfig,
   type LandingAIConfig,
+  type UnstructuredIOConfig,
 } from "@/types/api";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
@@ -37,15 +39,26 @@ type BattleConfigSelection = {
   llamaindex: LlamaIndexConfig;
   reducto: ReductoConfig;
   landingai: LandingAIConfig;
+  unstructuredio: UnstructuredIOConfig;
 };
 
 export default function BattlePage() {
+  const searchParams = useSearchParams();
+  const debugMode = searchParams.get("mode") === "debug";
+
   const [fileId, setFileId] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [pageCount, setPageCount] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [battlePageNumber, setBattlePageNumber] = useState<number | null>(null);
+
+  const [enabledProviders, setEnabledProviders] = useState<string[]>([
+    "llamaindex",
+    "reducto",
+    "landingai",
+    "unstructuredio",
+  ]);
 
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingPageCount, setIsLoadingPageCount] = useState(false);
@@ -85,6 +98,8 @@ export default function BattlePage() {
         ? configsForDisplay.reducto
         : provider === "landingai"
         ? configsForDisplay.landingai
+        : provider === "unstructuredio"
+        ? configsForDisplay.unstructuredio
         : undefined;
 
     if (!config) {
@@ -122,6 +137,18 @@ export default function BattlePage() {
     setFeedbackSuccess(false);
     setFeedbackError(null);
     setBattleConfigs(null);
+  };
+
+  const handleProviderToggle = (provider: string, enabled: boolean) => {
+    setEnabledProviders((prev) => {
+      if (enabled) {
+        return [...prev, provider];
+      } else {
+        // Ensure at least 2 providers remain enabled
+        const updated = prev.filter((p) => p !== provider);
+        return updated.length >= 2 ? updated : prev;
+      }
+    });
   };
 
   const handleUpload = async (file: File) => {
@@ -169,6 +196,7 @@ export default function BattlePage() {
         pageNumber: currentPage,
         filename: fileName || undefined,
         configs: selectedConfigs,
+        providers: debugMode ? enabledProviders : undefined,
       });
 
       if (!data.battle) {
@@ -182,6 +210,7 @@ export default function BattlePage() {
         llamaindex: { ...selectedConfigs.llamaindex },
         reducto: { ...selectedConfigs.reducto },
         landingai: { ...selectedConfigs.landingai },
+        unstructuredio: { ...selectedConfigs.unstructuredio },
       });
       setPreferredLabels(null);
       setFeedbackChoice(null);
@@ -252,6 +281,7 @@ export default function BattlePage() {
         assignment,
         providerResult,
         markdown: getPageMarkdown(providerResult, selectedPageForRun),
+        metadata: getPageMetadata(providerResult, selectedPageForRun),
         cost: costResults?.[assignment.provider],
       };
     });
@@ -275,6 +305,9 @@ export default function BattlePage() {
           pricing={pricingMap}
           pricingLoading={pricingLoading}
           pricingError={pricingError}
+          debugMode={debugMode}
+          enabledProviders={enabledProviders}
+          onProviderToggle={handleProviderToggle}
         />
       </div>
 
@@ -393,7 +426,7 @@ export default function BattlePage() {
               </div>
 
               <div className="grid gap-6 md:grid-cols-2 items-stretch">
-                {battleInfo.map(({ assignment, markdown, cost }) => {
+                {battleInfo.map(({ assignment, markdown, metadata, cost }) => {
                   const label = assignment.label;
                   const provider = assignment.provider;
                   const displayName = getProviderDisplayName(provider);
@@ -461,6 +494,7 @@ export default function BattlePage() {
                       key={label}
                       title={title}
                       markdown={markdown}
+                      metadata={metadata}
                       cardClassName={cardClass}
                       footer={footer}
                     />
@@ -650,4 +684,10 @@ function getPageMarkdown(result: ProviderParseResult | undefined, pageNumber: nu
   if (!result) return undefined;
   const page = result.pages.find((p) => p.page_number === pageNumber) ?? result.pages[0];
   return page?.markdown;
+}
+
+function getPageMetadata(result: ProviderParseResult | undefined, pageNumber: number) {
+  if (!result) return undefined;
+  const page = result.pages.find((p) => p.page_number === pageNumber) ?? result.pages[0];
+  return page?.metadata;
 }

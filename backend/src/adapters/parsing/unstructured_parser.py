@@ -16,29 +16,50 @@ from .base import BaseParseAdapter, PageResult, ParseResult
 class UnstructuredParser(BaseParseAdapter):
     """Parser using Unstructured.io Cloud API."""
 
-    def __init__(self, api_key: str, strategy: str = "fast"):
+    def __init__(
+        self,
+        api_key: str,
+        strategy: str = "fast",
+        vlm_model: str = None,
+        vlm_model_provider: str = None,
+    ):
         """
         Initialize Unstructured.io parser.
 
         Args:
             api_key: API key for Unstructured.io (required).
-            strategy: Processing strategy - "fast", "hi_res", or "auto" (default: "fast").
+            strategy: Processing strategy - "fast", "hi_res", "auto", or "vlm" (default: "fast").
                      - fast: Rule-based extraction (~100x faster)
                      - hi_res: Model-based with layout analysis
                      - auto: Adaptive routing per page
+                     - vlm: Vision Language Model for diagrams/slides
+            vlm_model: VLM model to use (required if strategy is "vlm").
+                      Examples: "gpt-4o", "claude-sonnet-4-20250514"
+            vlm_model_provider: VLM provider (required if strategy is "vlm").
+                               Examples: "openai", "anthropic", "bedrock", "vertexai"
 
         Raises:
-            ValueError: If api_key is empty or None, or if strategy is invalid.
+            ValueError: If api_key is empty or None, or if strategy is invalid,
+                       or if VLM parameters are missing when strategy is "vlm".
         """
         if not api_key:
             raise ValueError("Unstructured.io API key is required")
 
-        valid_strategies = ["fast", "hi_res", "auto"]
+        valid_strategies = ["fast", "hi_res", "auto", "vlm"]
         if strategy not in valid_strategies:
             raise ValueError(f"Invalid strategy '{strategy}'. Must be one of: {valid_strategies}")
 
+        # Validate VLM parameters
+        if strategy == "vlm":
+            if not vlm_model:
+                raise ValueError("vlm_model is required when strategy is 'vlm'")
+            if not vlm_model_provider:
+                raise ValueError("vlm_model_provider is required when strategy is 'vlm'")
+
         self.api_key = api_key
         self.strategy = strategy
+        self.vlm_model = vlm_model
+        self.vlm_model_provider = vlm_model_provider
         self.client = UnstructuredClient(api_key_auth=api_key)
 
     async def parse_pdf(self, pdf_path: Path) -> ParseResult:
@@ -58,17 +79,24 @@ class UnstructuredParser(BaseParseAdapter):
             file_content = f.read()
 
         # Create partition request
-        req = shared.PartitionParameters(
-            files=shared.Files(
+        req_params = {
+            "files": shared.Files(
                 content=file_content,
                 file_name=pdf_path.name,
             ),
-            strategy=self.strategy,
+            "strategy": self.strategy,
             # Request coordinate data for better metadata
-            coordinates=True,
+            "coordinates": True,
             # Use UUIDs for cleaner element IDs
-            unique_element_ids=True,
-        )
+            "unique_element_ids": True,
+        }
+
+        # Add VLM parameters if using VLM strategy
+        if self.strategy == "vlm":
+            req_params["vlm_model"] = self.vlm_model
+            req_params["vlm_model_provider"] = self.vlm_model_provider
+
+        req = shared.PartitionParameters(**req_params)
 
         # Execute partition
         try:
@@ -92,6 +120,11 @@ class UnstructuredParser(BaseParseAdapter):
             "mode": self.strategy,  # For consistency with pricing config
             "total_elements": len(elements),
         }
+
+        # Add VLM model info if using VLM strategy
+        if self.strategy == "vlm":
+            usage["vlm_model"] = self.vlm_model
+            usage["vlm_model_provider"] = self.vlm_model_provider
 
         return ParseResult(
             provider="unstructuredio",

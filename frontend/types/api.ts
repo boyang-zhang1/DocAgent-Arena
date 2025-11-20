@@ -154,6 +154,8 @@ export interface LandingAIConfig {
 export interface UnstructuredIOConfig {
   mode: string;
   strategy?: string;
+  vlm_model?: string;
+  vlm_model_provider?: string;
 }
 
 export type ProviderConfig = LlamaIndexConfig | ReductoConfig | LandingAIConfig | UnstructuredIOConfig;

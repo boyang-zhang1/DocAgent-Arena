@@ -90,8 +90,26 @@ unstructuredio:
         strategy: "hi_res"
 
     - mode: "auto"
-      label: "Auto"
+      label: "Auto (Adaptive)"
       credits_per_page: 1
-      description: "Adaptive routing per page"
+      description: "Adaptive routing per page (fast for text, hi_res/VLM for complex)"
       api:
         strategy: "auto"
+
+    - mode: "vlm-gpt4o"
+      label: "VLM (GPT-4o)"
+      credits_per_page: 1
+      description: "Vision model for diagrams/slides (highest quality)"
+      api:
+        strategy: "vlm"
+        vlm_model: "gpt-4o"
+        vlm_model_provider: "openai"
+
+    - mode: "vlm-claude"
+      label: "VLM (Claude Sonnet)"
+      credits_per_page: 1
+      description: "Vision model with Claude (high quality)"
+      api:
+        strategy: "vlm"
+        vlm_model: "claude-sonnet-4-20250514"
+        vlm_model_provider: "anthropic"
