@@ -20,6 +20,11 @@ export const PROVIDER_METADATA: Record<string, ProviderInfo> = {
     logoSrc: "/reducto.svg",
     alt: "Reducto logo",
   },
+  unstructuredio: {
+    displayName: "Unstructured.io",
+    logoSrc: "/unstructured.png",
+    alt: "Unstructured.io logo",
+  },
 };
 
 export function getProviderInfo(provider: string): ProviderInfo | undefined {

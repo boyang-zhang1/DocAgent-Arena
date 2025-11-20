@@ -151,7 +151,12 @@ export interface LandingAIConfig {
   model?: string;
 }
 
-export type ProviderConfig = LlamaIndexConfig | ReductoConfig | LandingAIConfig;
+export interface UnstructuredIOConfig {
+  mode: string;
+  strategy?: string;
+}
+
+export type ProviderConfig = LlamaIndexConfig | ReductoConfig | LandingAIConfig | UnstructuredIOConfig;
 
 export interface BattleAssignment {
   label: string;

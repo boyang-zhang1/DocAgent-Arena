@@ -11,12 +11,13 @@ import {
 } from "@/components/ui/select";
 import { Settings } from "lucide-react";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
-import type { LlamaIndexConfig, ReductoConfig, LandingAIConfig } from "@/types/api";
+import type { LlamaIndexConfig, ReductoConfig, LandingAIConfig, UnstructuredIOConfig } from "@/types/api";
 import {
   ProviderPricingMap,
   formatOptionDescription,
   llamaIndexConfigToValue,
   reductoConfigToValue,
+  unstructuredioConfigToValue,
   getModelOptionForConfig,
 } from "@/lib/modelUtils";
 
@@ -27,6 +28,7 @@ interface ProviderConfigs {
   llamaindex?: LlamaIndexConfig;
   reducto?: ReductoConfig;
   landingai?: LandingAIConfig;
+  unstructuredio?: UnstructuredIOConfig;
 }
 
 interface ProviderConfigFormProps {
@@ -50,6 +52,7 @@ export function ProviderConfigForm({
     "llamaindex",
     "reducto",
     "landingai",
+    "unstructuredio",
   ]);
   const [configs, setConfigs] = useState<ProviderConfigs>({
     llamaindex: {
@@ -65,15 +68,25 @@ export function ProviderConfigForm({
       mode: "dpt-2",
       model: "dpt-2",
     },
+    unstructuredio: {
+      mode: "fast",
+      strategy: "fast",
+    },
   });
 
   const llamaOptions = pricing?.llamaindex?.models ?? [];
   const reductoOptions = pricing?.reducto?.models ?? [];
   const landingaiOptions = pricing?.landingai?.models ?? [];
+  const unstructuredioOptions = pricing?.unstructuredio?.models ?? [];
   const landingaiValue =
     landingaiOptions.find((option) => option.value === configs.landingai?.mode)?.value ||
     configs.landingai?.mode ||
     landingaiOptions[0]?.value ||
+    "";
+  const unstructuredioValue =
+    unstructuredioOptions.find((option) => option.value === configs.unstructuredio?.mode)?.value ||
+    configs.unstructuredio?.mode ||
+    unstructuredioOptions[0]?.value ||
     "";
 
   // Load configs and selection from localStorage on mount
@@ -83,22 +96,23 @@ export function ProviderConfigForm({
       if (storedConfigs) {
         const parsedConfigs = JSON.parse(storedConfigs) as ProviderConfigs;
         setConfigs(parsedConfigs);
-        onConfigsChange(parsedConfigs);
+        // Defer to avoid setState-during-render
+        setTimeout(() => onConfigsChange(parsedConfigs), 0);
       } else {
         // Save default configs
         localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(configs));
-        onConfigsChange(configs);
+        setTimeout(() => onConfigsChange(configs), 0);
       }
 
       const storedSelection = localStorage.getItem(SELECTION_STORAGE_KEY);
       if (storedSelection) {
         const parsedSelection = JSON.parse(storedSelection) as string[];
         setSelectedProviders(parsedSelection);
-        onSelectionChange(parsedSelection);
+        setTimeout(() => onSelectionChange(parsedSelection), 0);
       } else {
         // Save default selection
         localStorage.setItem(SELECTION_STORAGE_KEY, JSON.stringify(selectedProviders));
-        onSelectionChange(selectedProviders);
+        setTimeout(() => onSelectionChange(selectedProviders), 0);
       }
     } catch (error) {
       console.error("Failed to load from localStorage:", error);
@@ -140,6 +154,7 @@ export function ProviderConfigForm({
       updateProvider("llamaindex");
       updateProvider("reducto");
       updateProvider("landingai");
+      updateProvider("unstructuredio");
 
       if (!changed) {
         return current;
@@ -151,7 +166,8 @@ export function ProviderConfigForm({
         console.error("Failed to save configs to localStorage:", error);
       }
 
-      onConfigsChange(next);
+      // Defer to avoid setState-during-render
+      setTimeout(() => onConfigsChange(next), 0);
       return next;
     });
   }, [pricing]);
@@ -200,7 +216,7 @@ export function ProviderConfigForm({
         <h2 className="text-lg font-semibold">Provider Configuration</h2>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-4 gap-6">
         {/* LlamaIndex Column */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 mb-2">
@@ -343,6 +359,56 @@ export function ProviderConfigForm({
             </SelectContent>
           </Select>
           {landingaiOptions.length === 0 && (
+            <p className="mt-2 text-xs text-gray-500">
+              {pricingLoading
+                ? "Loading pricing..."
+                : pricingError || "Pricing data unavailable."}
+            </p>
+          )}
+        </div>
+
+        {/* Unstructured.io Column */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <Checkbox
+              id="provider-unstructuredio"
+              checked={selectedProviders.includes("unstructuredio")}
+              onCheckedChange={() => handleProviderToggle("unstructuredio")}
+              disabled={disabled}
+            />
+            <ProviderLabel
+              provider="unstructuredio"
+              size={20}
+              className="gap-2"
+              nameClassName="text-sm font-medium"
+            />
+          </div>
+          <Select
+            value={unstructuredioValue || undefined}
+            onValueChange={(value) => {
+              const option = unstructuredioOptions.find((model) => model.value === value);
+              if (option) {
+                handleFullConfigChange("unstructuredio", option.config);
+              }
+            }}
+            disabled={
+              disabled ||
+              !selectedProviders.includes("unstructuredio") ||
+              unstructuredioOptions.length === 0
+            }
+          >
+            <SelectTrigger id="unstructuredio-strategy">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {unstructuredioOptions.map((model) => (
+                <SelectItem key={model.value} value={model.value}>
+                  {formatOptionDescription(model)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {unstructuredioOptions.length === 0 && (
             <p className="mt-2 text-xs text-gray-500">
               {pricingLoading
                 ? "Loading pricing..."

@@ -2,6 +2,7 @@ import type {
   LlamaIndexConfig,
   ReductoConfig,
   LandingAIConfig,
+  UnstructuredIOConfig,
   ModelOption,
   ProviderPricingInfo,
 } from "@/types/api";
@@ -53,10 +54,15 @@ export function landingaiConfigToValue(config?: LandingAIConfig): string {
   return config?.mode || "";
 }
 
+export function unstructuredioConfigToValue(config?: UnstructuredIOConfig): string {
+  return config?.mode || "";
+}
+
 const PROVIDER_FALLBACK_LABELS: Record<string, string> = {
   llamaindex: "Agentic",
   reducto: "Standard",
   landingai: "DPT-2",
+  unstructuredio: "Fast",
 };
 
 function matchesConfig(option: ModelOption, config?: Record<string, any>): boolean {

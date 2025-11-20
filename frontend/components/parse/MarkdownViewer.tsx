@@ -58,6 +58,7 @@ function MermaidRenderer({ code }: { code: string }) {
 interface MarkdownViewerProps {
   title: ReactNode;
   markdown: string | undefined;
+  metadata?: Record<string, any>;
   isLoading?: boolean;
   subtitle?: ReactNode;
   footer?: ReactNode;
@@ -67,6 +68,7 @@ interface MarkdownViewerProps {
 export function MarkdownViewer({
   title,
   markdown,
+  metadata,
   isLoading = false,
   subtitle,
   footer,
@@ -196,10 +198,10 @@ export function MarkdownViewer({
             </div>
             <details className="mt-4 rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 text-sm text-gray-600 dark:text-gray-300">
               <summary className="cursor-pointer font-medium">
-                Original Markdown / HTML
+                Original Structured Response
               </summary>
               <pre className="mt-3 whitespace-pre-wrap break-words text-xs text-gray-800 dark:text-gray-100 bg-transparent">
-                {markdown}
+                {metadata?.raw_response || markdown}
               </pre>
             </details>
           </div>

@@ -175,6 +175,15 @@ export default function ParsePage() {
     return page?.markdown;
   };
 
+  // Get metadata for a specific provider and page
+  const getProviderMetadata = (provider: string) => {
+    if (!parseResults?.[provider]) return undefined;
+    const page = parseResults[provider].pages.find(
+      (p) => p.page_number === currentPage
+    );
+    return page?.metadata;
+  };
+
   // Get list of providers that were run (have results)
   const runProviders = parseResults ? Object.keys(parseResults) : [];
 
@@ -319,6 +328,7 @@ export default function ParsePage() {
                         />
                       }
                       markdown={getProviderMarkdown(provider)}
+                      metadata={getProviderMetadata(provider)}
                     />
 
                     {/* Info Cards Grid */}

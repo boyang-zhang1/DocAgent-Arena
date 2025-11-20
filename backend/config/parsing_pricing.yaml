@@ -69,3 +69,29 @@ landingai:
       description: "Cost-effective LandingAI parsing"
       api:
         model: "dpt-2-mini"
+
+unstructuredio:
+  # Unstructured.io pricing: 0.03 USD per credit (actual: $0.03/page)
+  usd_per_credit: 0.03
+
+  models:
+    - mode: "fast"
+      label: "Fast"
+      credits_per_page: 1
+      description: "Rule-based extraction (~100x faster)"
+      api:
+        strategy: "fast"
+
+    - mode: "hi_res"
+      label: "Hi-Res"
+      credits_per_page: 1
+      description: "Model-based with layout analysis"
+      api:
+        strategy: "hi_res"
+
+    - mode: "auto"
+      label: "Auto"
+      credits_per_page: 1
+      description: "Adaptive routing per page"
+      api:
+        strategy: "auto"
