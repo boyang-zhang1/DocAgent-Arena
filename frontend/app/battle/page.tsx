@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { FileUploadZone } from "@/components/parse/FileUploadZone";
 import { PDFViewer } from "@/components/parse/PDFViewer";
@@ -34,6 +34,7 @@ import {
   getFallbackLabel,
 } from "@/lib/modelUtils";
 import { useProviderPricing } from "@/hooks/useProviderPricing";
+import { usePDFViewer } from "@/hooks/usePDFViewer";
 
 type FeedbackChoice = string | "BOTH_GOOD" | "BOTH_BAD";
 
@@ -45,15 +46,27 @@ type BattleConfigSelection = {
   extendai: ExtendAIConfig;
 };
 
-export default function BattlePage() {
+function BattlePageContent() {
   const searchParams = useSearchParams();
   const debugMode = searchParams.get("mode") === "debug";
 
-  const [fileId, setFileId] = useState<string | null>(null);
+  // PDF Viewer state (using shared hook)
+  const {
+    fileId,
+    pdfFile,
+    currentPage,
+    totalPages,
+    setFileId,
+    setPdfFile,
+    setCurrentPage,
+    setTotalPages,
+    handlePageChange,
+    handleLoadSuccess,
+    handleFileUpload,
+    reset: resetPdfViewer,
+  } = usePDFViewer();
+
   const [fileName, setFileName] = useState("");
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [pageCount, setPageCount] = useState<number | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [battlePageNumber, setBattlePageNumber] = useState<number | null>(null);
 
   const [enabledProviders, setEnabledProviders] = useState<string[]>([
@@ -167,16 +180,13 @@ export default function BattlePage() {
 
     try {
       const upload = await apiClient.uploadPdf(file);
-      setFileId(upload.file_id);
       setFileName(upload.filename);
-      setPdfFile(file); // Store File object for local viewing
-      setCurrentPage(1);
       setBattlePageNumber(null);
 
       setIsLoadingPageCount(true);
       try {
         const count = await apiClient.getPageCount(upload.file_id);
-        setPageCount(count.page_count);
+        handleFileUpload(upload.file_id, file, count.page_count);
       } finally {
         setIsLoadingPageCount(false);
       }
@@ -190,7 +200,7 @@ export default function BattlePage() {
 
   const handleRunBattle = async () => {
     if (!fileId) return;
-    if (!pageCount) {
+    if (!totalPages) {
       setError("Please wait for the page count before running a battle.");
       return;
     }
@@ -318,11 +328,8 @@ export default function BattlePage() {
   };
 
   const handleReset = () => {
-    setFileId(null);
+    resetPdfViewer();
     setFileName("");
-    setPdfFile(null);
-    setPageCount(null);
-    setCurrentPage(1);
     setBattlePageNumber(null);
     resetBattleState();
   };
@@ -388,9 +395,9 @@ export default function BattlePage() {
                 <FileText className="h-5 w-5" />
                 <span className="font-semibold">{fileName}</span>
               </div>
-              {pageCount !== null && (
+              {totalPages > 0 && (
                 <p className="text-sm text-gray-500">
-                  {pageCount} {pageCount === 1 ? "page" : "pages"} total • Currently viewing page {currentPage}
+                  {totalPages} {totalPages === 1 ? "page" : "pages"} total • Currently viewing page {currentPage}
                 </p>
               )}
               {battlePageNumber && (
@@ -417,24 +424,20 @@ export default function BattlePage() {
                 fileId={fileId}
                 pdfFile={pdfFile || undefined}
                 currentPage={currentPage}
-                onPageChange={setCurrentPage}
-                onLoadSuccess={(numPages) => {
-                  if (!pageCount) {
-                    setPageCount(numPages);
-                  }
-                }}
+                onPageChange={handlePageChange}
+                onLoadSuccess={handleLoadSuccess}
               />
-              {pageCount && (
+              {totalPages > 0 && (
                 <>
                   <PageNavigator
                     currentPage={currentPage}
-                    totalPages={pageCount}
-                    onPageChange={setCurrentPage}
+                    totalPages={totalPages}
+                    onPageChange={handlePageChange}
                   />
                   <div className="flex flex-col items-center gap-3">
                     <Button
                       onClick={handleRunBattle}
-                      disabled={isParsing || isUploading || pageCount === null}
+                      disabled={isParsing || isUploading || totalPages === 0}
                       size="lg"
                       className="w-full max-w-md"
                     >
@@ -825,4 +828,12 @@ function getPageMetadata(result: ProviderParseResult | undefined, pageNumber: nu
   if (!result) return undefined;
   const page = result.pages.find((p) => p.page_number === pageNumber) ?? result.pages[0];
   return page?.metadata;
+}
+
+export default function BattlePage() {
+  return (
+    <Suspense fallback={<div className="container mx-auto p-6 text-center">Loading...</div>}>
+      <BattlePageContent />
+    </Suspense>
+  );
 }

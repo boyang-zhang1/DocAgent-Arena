@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { FileUploadZone } from "@/components/parse/FileUploadZone";
 import { ProviderConfigForm } from "@/components/parse/ProviderConfigForm";
@@ -19,6 +19,7 @@ import { apiClient } from "@/lib/api-client";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
 import type { LlamaIndexConfig, ReductoConfig, LandingAIConfig } from "@/types/api";
 import { useProviderPricing } from "@/hooks/useProviderPricing";
+import { usePDFViewer } from "@/hooks/usePDFViewer";
 
 interface PageData {
   page_number: number;
@@ -56,9 +57,24 @@ interface ProviderConfigs {
   landingai?: LandingAIConfig;
 }
 
-export default function ParsePage() {
+function ParsePageContent() {
   const searchParams = useSearchParams();
   const debugMode = searchParams.get("mode") === "debug";
+
+  // PDF Viewer state (using shared hook)
+  const {
+    fileId,
+    pdfFile,
+    currentPage,
+    totalPages,
+    setFileId,
+    setPdfFile,
+    handlePageChange,
+    handleLoadSuccess,
+    handleFileUpload,
+    extractCurrentPageAsBlob,
+    reset: resetPdfViewer,
+  } = usePDFViewer();
 
   const [selectedProviders, setSelectedProviders] = useState<string[]>([
     "llamaindex",
@@ -66,13 +82,10 @@ export default function ParsePage() {
     "landingai",
   ]);
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfigs>({});
-  const [fileId, setFileId] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>("");
-  const [pageCount, setPageCount] = useState<number | null>(null);
+  const [parseMode, setParseMode] = useState<'single' | 'full'>('single');
   const [parseResults, setParseResults] = useState<ParseResults | null>(null);
   const [costResults, setCostResults] = useState<CostResults | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingPageCount, setIsLoadingPageCount] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
@@ -98,14 +111,13 @@ export default function ParsePage() {
 
     try {
       const data = await apiClient.uploadPdf(file);
-      setFileId(data.file_id);
       setFileName(data.filename);
 
       // Get page count instead of auto-parsing
       setIsLoadingPageCount(true);
       try {
         const pageCountData = await apiClient.getPageCount(data.file_id);
-        setPageCount(pageCountData.page_count);
+        handleFileUpload(data.file_id, file, pageCountData.page_count);
       } catch (err) {
         console.error("Page count error:", err);
         setError(err instanceof Error ? err.message : "Failed to get page count");
@@ -128,6 +140,29 @@ export default function ParsePage() {
     setProviderStatus({});
 
     try {
+      let parseFileId = fileId;
+      let parseFileName = fileName;
+
+      // If single-page mode, extract and upload the current page
+      if (parseMode === 'single') {
+        const singlePageBlob = await extractCurrentPageAsBlob();
+        if (!singlePageBlob) {
+          throw new Error("Failed to extract current page");
+        }
+
+        // Convert blob to File for upload
+        const singlePageFile = new File(
+          [singlePageBlob],
+          `${fileName.replace('.pdf', '')}_page_${currentPage}.pdf`,
+          { type: 'application/pdf' }
+        );
+
+        // Upload the single-page PDF
+        const uploadResponse = await apiClient.uploadPdf(singlePageFile);
+        parseFileId = uploadResponse.file_id;
+        parseFileName = uploadResponse.filename;
+      }
+
       // Prepare configs for selected providers
       const configs: Record<string, any> = {};
       selectedProviders.forEach((provider) => {
@@ -139,10 +174,10 @@ export default function ParsePage() {
       // Use streaming API with progress callback
       const data = await apiClient.compareParsesStream(
         {
-          fileId,
+          fileId: parseFileId,
           providers: selectedProviders,
           configs,
-          filename: fileName || undefined,
+          filename: parseFileName || undefined,
           debug: debugMode,
         },
         (event) => {
@@ -172,11 +207,6 @@ export default function ParsePage() {
 
       setParseResults(data.results);
 
-      // Set total pages from first available provider
-      const firstProvider = Object.values(data.results)[0];
-      setTotalPages(firstProvider?.total_pages || 0);
-      setCurrentPage(1);
-
       // Initialize displayed providers (all by default)
       setDisplayedProviders(Object.keys(data.results));
       setCarouselIndex(0);
@@ -198,21 +228,20 @@ export default function ParsePage() {
   };
 
   const handleReset = () => {
-    setFileId(null);
+    resetPdfViewer();
     setFileName("");
-    setPageCount(null);
     setParseResults(null);
     setCostResults(null);
-    setCurrentPage(1);
-    setTotalPages(0);
     setError(null);
   };
 
   // Get markdown for a specific provider and page
   const getProviderMarkdown = (provider: string) => {
     if (!parseResults?.[provider]) return undefined;
+    // In single-page mode, the extracted page is always page 1 in the results
+    const pageNumber = parseMode === 'single' ? 1 : currentPage;
     const page = parseResults[provider].pages.find(
-      (p) => p.page_number === currentPage
+      (p) => p.page_number === pageNumber
     );
     return page?.markdown;
   };
@@ -220,8 +249,10 @@ export default function ParsePage() {
   // Get metadata for a specific provider and page
   const getProviderMetadata = (provider: string) => {
     if (!parseResults?.[provider]) return undefined;
+    // In single-page mode, the extracted page is always page 1 in the results
+    const pageNumber = parseMode === 'single' ? 1 : currentPage;
     const page = parseResults[provider].pages.find(
-      (p) => p.page_number === currentPage
+      (p) => p.page_number === pageNumber
     );
     return page?.metadata;
   };
@@ -326,9 +357,9 @@ export default function ParsePage() {
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-gray-500" />
               <span className="font-medium">{fileName}</span>
-              {pageCount && (
+              {totalPages > 0 && (
                 <span className="text-sm text-gray-500">
-                  ({pageCount} {pageCount === 1 ? "page" : "pages"})
+                  ({totalPages} {totalPages === 1 ? "page" : "pages"})
                 </span>
               )}
             </div>
@@ -337,11 +368,72 @@ export default function ParsePage() {
             </Button>
           </div>
 
-          {/* Cost Estimation - Show after page count is loaded but before parsing */}
-          {pageCount && !parseResults && !isParsing && (
-            <div className="max-w-2xl mx-auto">
+          {/* Loading page count */}
+          {isLoadingPageCount && (
+            <div className="text-center py-6">
+              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-blue-500" />
+              <p className="text-sm text-gray-500">Analyzing PDF...</p>
+            </div>
+          )}
+
+          {/* PDF Viewer - Show immediately after page count loads */}
+          {totalPages > 0 && !isLoadingPageCount && (
+            <>
+              <div className="max-w-4xl mx-auto">
+                <PDFViewer
+                  fileId={fileId}
+                  pdfFile={pdfFile || undefined}
+                  currentPage={currentPage}
+                  onPageChange={handlePageChange}
+                  onLoadSuccess={handleLoadSuccess}
+                />
+              </div>
+
+              {/* Page Navigator - Below PDF */}
+              <PageNavigator
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={handlePageChange}
+              />
+            </>
+          )}
+
+          {/* Parse Mode Selection - Show after page count is loaded but before parsing */}
+          {totalPages > 0 && !isLoadingPageCount && !parseResults && !isParsing && (
+            <div className="max-w-2xl mx-auto space-y-4">
+              {/* Parse Mode Toggle */}
+              <div className="bg-blue-50 dark:bg-blue-950/30 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                <div className="flex items-start gap-3">
+                  <Checkbox
+                    id="parse-full-pdf"
+                    checked={parseMode === 'full'}
+                    onCheckedChange={(checked) => setParseMode(checked ? 'full' : 'single')}
+                  />
+                  <div className="flex-1">
+                    <label
+                      htmlFor="parse-full-pdf"
+                      className="text-sm font-medium cursor-pointer text-gray-700 dark:text-gray-300"
+                    >
+                      Parse entire PDF
+                    </label>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      {parseMode === 'single' ? (
+                        <>
+                          Currently: <span className="font-medium">Single page mode</span> - Only page {currentPage} will be parsed (faster & cheaper)
+                        </>
+                      ) : (
+                        <>
+                          Currently: <span className="font-medium">Full PDF mode</span> - All {totalPages} pages will be parsed
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Cost Estimation */}
               <CostEstimation
-                pageCount={pageCount}
+                pageCount={parseMode === 'single' ? 1 : totalPages}
                 providers={selectedProviders}
                 configs={providerConfigs}
                 onConfirm={handleConfirmParse}
@@ -353,20 +445,18 @@ export default function ParsePage() {
             </div>
           )}
 
-          {isLoadingPageCount && (
-            <div className="text-center py-6">
-              <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-blue-500" />
-              <p className="text-sm text-gray-500">Analyzing PDF...</p>
-            </div>
-          )}
-
-          {isParsing ? (
+          {/* Parsing Status */}
+          {isParsing && (
             <div className="max-w-2xl mx-auto py-12">
               <div className="text-center mb-8">
                 <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-blue-500" />
                 <p className="text-lg font-medium">Parsing PDF...</p>
                 <p className="text-sm text-gray-500 mt-2">
-                  This may take a few moments
+                  {parseMode === 'single' ? (
+                    <>Parsing page {currentPage} of {totalPages}</>
+                  ) : (
+                    <>Parsing all {totalPages} pages - this may take a few moments</>
+                  )}
                 </p>
               </div>
 
@@ -413,31 +503,11 @@ export default function ParsePage() {
                 ))}
               </div>
             </div>
-          ) : parseResults ? (
+          )}
+
+          {/* Results Section - Show below PDF viewer when parsing completes */}
+          {parseResults && (
             <>
-              {/* PDF Viewer (Upper Section - Centered with Max Width) */}
-              <div className="max-w-4xl mx-auto">
-                <PDFViewer
-                  fileId={fileId}
-                  currentPage={currentPage}
-                  onPageChange={setCurrentPage}
-                  onLoadSuccess={(numPages) => {
-                    if (totalPages === 0) {
-                      setTotalPages(numPages);
-                    }
-                  }}
-                />
-              </div>
-
-              {/* Page Navigator - Below PDF, Above Providers */}
-              {totalPages > 0 && (
-                <PageNavigator
-                  currentPage={currentPage}
-                  totalPages={totalPages}
-                  onPageChange={setCurrentPage}
-                />
-              )}
-
               {/* Provider Selection Checkboxes */}
               {runProviders.length > 1 && (
                 <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
@@ -561,11 +631,19 @@ export default function ParsePage() {
                 ))}
               </div>
             </>
-          ) : null}
+          )}
         </div>
       )}
 
       <ContactIcons />
     </div>
+  );
+}
+
+export default function ParsePage() {
+  return (
+    <Suspense fallback={<div className="container mx-auto p-6 text-center">Loading...</div>}>
+      <ParsePageContent />
+    </Suspense>
   );
 }
