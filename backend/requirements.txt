@@ -47,6 +47,7 @@ playwright>=1.40.0  # HTML to PDF conversion (preserves document structure)
 reductoai>=0.13.0
 landingai-ade>=0.20.2
 unstructured-client>=0.26.0
+extend-ai
 
 # Web API
 fastapi==0.104.1

@@ -3,6 +3,7 @@ import type {
   ReductoConfig,
   LandingAIConfig,
   UnstructuredIOConfig,
+  ExtendAIConfig,
   ModelOption,
   ProviderPricingInfo,
 } from "@/types/api";
@@ -15,6 +16,7 @@ export const STANDARD_PRESET = {
   reducto: "standard",
   landingai: "dpt-2-mini",
   unstructuredio: "fast",
+  extendai: "standard",
 } as const;
 
 export const ADVANCE_PRESET = {
@@ -22,6 +24,7 @@ export const ADVANCE_PRESET = {
   reducto: "complex",
   landingai: "dpt-2",
   unstructuredio: "vlm-gpt4o",
+  extendai: "agentic-ocr",
 } as const;
 
 export type PresetMode = "standard" | "advance" | "custom";
@@ -45,6 +48,10 @@ export function getDefaultBattleConfigs() {
       mode: "fast",
       strategy: "fast",
     } as UnstructuredIOConfig,
+    extendai: {
+      mode: "standard",
+      parse_mode: "standard",
+    } as ExtendAIConfig,
   };
 }
 
@@ -64,11 +71,16 @@ export function unstructuredioConfigToValue(config?: UnstructuredIOConfig): stri
   return config?.mode || "";
 }
 
+export function extendaiConfigToValue(config?: ExtendAIConfig): string {
+  return config?.mode || "";
+}
+
 const PROVIDER_FALLBACK_LABELS: Record<string, string> = {
   llamaindex: "Agentic",
   reducto: "Standard",
   landingai: "DPT-2",
   unstructuredio: "Fast",
+  extendai: "Standard",
 };
 
 function matchesConfig(option: ModelOption, config?: Record<string, any>): boolean {
@@ -125,18 +137,21 @@ export function detectPresetFromConfigs(configs: {
   reducto: ReductoConfig;
   landingai: LandingAIConfig;
   unstructuredio?: UnstructuredIOConfig;
+  extendai: ExtendAIConfig;
 }): PresetMode {
   const llamaMode = configs.llamaindex?.mode || "";
   const reductoMode = configs.reducto?.mode || "";
   const landingaiMode = configs.landingai?.mode || "";
   const unstructuredioMode = configs.unstructuredio?.mode || "";
+  const extendaiMode = configs.extendai?.mode || "";
 
   // Check if matches standard preset
   if (
     llamaMode === STANDARD_PRESET.llamaindex &&
     reductoMode === STANDARD_PRESET.reducto &&
     landingaiMode === STANDARD_PRESET.landingai &&
-    unstructuredioMode === STANDARD_PRESET.unstructuredio
+    unstructuredioMode === STANDARD_PRESET.unstructuredio &&
+    extendaiMode === STANDARD_PRESET.extendai
   ) {
     return "standard";
   }
@@ -146,7 +161,8 @@ export function detectPresetFromConfigs(configs: {
     llamaMode === ADVANCE_PRESET.llamaindex &&
     reductoMode === ADVANCE_PRESET.reducto &&
     landingaiMode === ADVANCE_PRESET.landingai &&
-    unstructuredioMode === ADVANCE_PRESET.unstructuredio
+    unstructuredioMode === ADVANCE_PRESET.unstructuredio &&
+    extendaiMode === ADVANCE_PRESET.extendai
   ) {
     return "advance";
   }
@@ -166,6 +182,7 @@ export function getConfigsForPreset(
   reducto: ReductoConfig;
   landingai: LandingAIConfig;
   unstructuredio: UnstructuredIOConfig;
+  extendai: ExtendAIConfig;
 } | null {
   if (!pricing) return null;
 
@@ -184,8 +201,11 @@ export function getConfigsForPreset(
   const unstructuredioOption = pricing.unstructuredio?.models.find(
     (m) => m.value === presetModes.unstructuredio
   );
+  const extendaiOption = pricing.extendai?.models.find(
+    (m) => m.value === presetModes.extendai
+  );
 
-  if (!llamaOption || !reductoOption || !landingaiOption || !unstructuredioOption) {
+  if (!llamaOption || !reductoOption || !landingaiOption || !unstructuredioOption || !extendaiOption) {
     return null;
   }
 
@@ -194,5 +214,6 @@ export function getConfigsForPreset(
     reducto: reductoOption.config as ReductoConfig,
     landingai: landingaiOption.config as LandingAIConfig,
     unstructuredio: unstructuredioOption.config as UnstructuredIOConfig,
+    extendai: extendaiOption.config as ExtendAIConfig,
   };
 }

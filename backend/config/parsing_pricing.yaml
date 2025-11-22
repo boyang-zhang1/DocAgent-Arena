@@ -113,3 +113,22 @@ unstructuredio:
         strategy: "vlm"
         vlm_model: "claude-sonnet-4-20250514"
         vlm_model_provider: "anthropic"
+
+extendai:
+  # ExtendAI pricing: 0.01 USD per credit (actual: $0.02/page = 2 credits)
+  usd_per_credit: 0.01
+
+  models:
+    - mode: "standard"
+      label: "Standard"
+      credits_per_page: 2
+      description: "Page-based parsing with standard OCR"
+      api:
+        agentic_ocr: false
+
+    - mode: "agentic-ocr"
+      label: "Agentic OCR"
+      credits_per_page: 2
+      description: "AI-powered OCR for complex documents"
+      api:
+        agentic_ocr: true

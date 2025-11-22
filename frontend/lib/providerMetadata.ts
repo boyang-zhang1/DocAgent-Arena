@@ -25,6 +25,11 @@ export const PROVIDER_METADATA: Record<string, ProviderInfo> = {
     logoSrc: "/unstructured.png",
     alt: "Unstructured.io logo",
   },
+  extendai: {
+    displayName: "ExtendAI",
+    logoSrc: "/extendai.png",
+    alt: "ExtendAI logo",
+  },
 };
 
 export function getProviderInfo(provider: string): ProviderInfo | undefined {

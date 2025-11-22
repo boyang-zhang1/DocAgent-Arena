@@ -329,6 +329,7 @@ export default function ParsePage() {
                       }
                       markdown={getProviderMarkdown(provider)}
                       metadata={getProviderMetadata(provider)}
+                      provider={provider}
                     />
 
                     {/* Info Cards Grid */}

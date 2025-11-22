@@ -22,6 +22,7 @@ import {
   type ReductoConfig,
   type LandingAIConfig,
   type UnstructuredIOConfig,
+  type ExtendAIConfig,
 } from "@/types/api";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
@@ -40,6 +41,7 @@ type BattleConfigSelection = {
   reducto: ReductoConfig;
   landingai: LandingAIConfig;
   unstructuredio: UnstructuredIOConfig;
+  extendai: ExtendAIConfig;
 };
 
 export default function BattlePage() {
@@ -58,6 +60,7 @@ export default function BattlePage() {
     "reducto",
     "landingai",
     "unstructuredio",
+    "extendai",
   ]);
 
   const [isUploading, setIsUploading] = useState(false);
@@ -100,6 +103,8 @@ export default function BattlePage() {
         ? configsForDisplay.landingai
         : provider === "unstructuredio"
         ? configsForDisplay.unstructuredio
+        : provider === "extendai"
+        ? configsForDisplay.extendai
         : undefined;
 
     if (!config) {
@@ -211,6 +216,7 @@ export default function BattlePage() {
         reducto: { ...selectedConfigs.reducto },
         landingai: { ...selectedConfigs.landingai },
         unstructuredio: { ...selectedConfigs.unstructuredio },
+        extendai: { ...selectedConfigs.extendai },
       });
       setPreferredLabels(null);
       setFeedbackChoice(null);
@@ -497,6 +503,7 @@ export default function BattlePage() {
                       metadata={metadata}
                       cardClassName={cardClass}
                       footer={footer}
+                      provider={provider}
                     />
                   );
                 })}
