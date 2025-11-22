@@ -89,10 +89,27 @@ For each provider, select your preferred parsing mode:
 | **DPT-2 Mini** | 1.5 | $0.015 | Fast | General use |
 | **DPT-2** | 3 | $0.030 | Medium | Detailed extraction |
 
+#### ExtendAI Options
+
+| Mode | Credits/Page | Cost/Page | Speed | Best For |
+|------|--------------|-----------|-------|----------|
+| **Standard** | 2 | $0.020 | Fast | General documents |
+| **Agentic OCR** | 2 | $0.020 | Medium | Complex layouts |
+
+#### Unstructured.io Options
+
+| Strategy | Credits/Page | Cost/Page | Speed | Best For |
+|----------|--------------|-----------|-------|----------|
+| **Fast** | 1 | $0.030 | Very Fast | Quick text extraction |
+| **Hi-Res** | 1 | $0.030 | Medium | OCR with layout detection |
+| **Auto** | 1 | $0.030 | Medium | Automatic strategy selection |
+| **VLM GPT-4o** | 1 | $0.030 | Slow | Complex documents (GPT-4 Vision) |
+| **VLM Claude** | 1 | $0.030 | Slow | Complex documents (Claude Vision) |
+
 **Configuration Strategy**:
 - Select ALL providers/modes you want to test
 - Only configured options enter the random pool
-- Battle randomly picks 2 from your selection
+- Battle randomly picks 2 from your selection (12+ configurations available)
 - Different modes of same provider can battle each other!
 
 ### Step 3: Pick a Page
@@ -324,13 +341,17 @@ Cost = (Provider 1 cost) + (Provider 2 cost)
 **Example Calculations**:
 
 ```
-Battle: LlamaIndex Cost-effective vs Reducto Standard (1 page)
-= $0.003 + $0.015
-= $0.018 per battle
+Battle: LlamaIndex Cost-effective vs ExtendAI Standard (1 page)
+= $0.003 + $0.020
+= $0.023 per battle
 
 Battle: LlamaIndex Agentic Plus vs Reducto Complex VLM (1 page)
 = $0.090 + $0.030
 = $0.120 per battle
+
+Battle: ExtendAI Standard vs Unstructured.io Fast (1 page)
+= $0.020 + $0.030
+= $0.050 per battle
 ```
 
 ### Budget Planning
@@ -527,12 +548,16 @@ Content-Type: application/json
   "api_keys": {
     "llamaindex": "llx-...",
     "reducto": "red-...",
-    "landingai": "va-..."
+    "landingai": "va-...",
+    "extendai": "ext-...",
+    "unstructured": "uns-..."
   },
   "configs": {
     "llamaindex": { "parse_mode": "parse_page_with_llm", "model": "openai-gpt-4-1-mini" },
     "reducto": { "mode": "standard", "summarize_figures": false },
-    "landingai": { "model": "dpt-2-latest" }
+    "landingai": { "model": "dpt-2-latest" },
+    "extendai": { "mode": "standard" },
+    "unstructured": { "strategy": "hi_res" }
   }
 }
 ```

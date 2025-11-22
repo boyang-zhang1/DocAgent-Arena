@@ -7,7 +7,7 @@ Get DocAgent Arena running and complete your first PDF parser battle in 5 minute
 - Python 3.11+
 - Node.js 18+
 - OpenAI API key (required)
-- Optional: LlamaIndex, Reducto, or LandingAI keys
+- Optional: LlamaIndex, Reducto, LandingAI, Unstructured.io, or ExtendAI keys
 
 ## 1. Installation (2 minutes)
 
@@ -36,7 +36,9 @@ cp .env.example .env
 # OPENAI_API_KEY=sk-...              # Required
 # LLAMAINDEX_API_KEY=llx-...         # Optional
 # REDUCTO_API_KEY=red-...            # Optional
-# VISION_AGENT_API_KEY=va-...        # Optional
+# VISION_AGENT_API_KEY=va-...        # Optional (LandingAI)
+# UNSTRUCTURED_API_KEY=...           # Optional
+# EXTENDAI_API_KEY=...               # Optional
 
 # Frontend configuration (optional)
 cd ../frontend
@@ -150,6 +152,8 @@ Get API keys for additional providers:
 - **LlamaIndex**: https://cloud.llamaindex.ai/
 - **Reducto**: https://reducto.ai/
 - **LandingAI**: https://landing.ai/
+- **Unstructured.io**: https://unstructured.io/
+- **ExtendAI**: https://extend.app/
 
 Add keys to `backend/.env` and restart backend.
 
@@ -185,9 +189,11 @@ Typical costs for first battle (1 page):
 
 | Configuration | Est. Cost | Time |
 |--------------|-----------|------|
-| 2 × Cost-effective | $0.006 | ~15s |
+| 2 × Cost-effective | $0.004 | ~15s |
 | 2 × Standard | $0.030 | ~20s |
 | 2 × High-quality | $0.120 | ~40s |
+
+Note: ExtendAI ($0.02/page) and Unstructured.io ($0.03/page) offer competitive pricing.
 
 **Tip**: Start with cost-effective modes to test the system.
 

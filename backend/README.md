@@ -1,13 +1,12 @@
 # DocAgent Arena Backend
 
-FastAPI backend for PDF parsing, battle mode, and RAG benchmarking.
+FastAPI backend for PDF parsing and battle mode.
 
 ## Overview
 
-Provides three main services:
-1. **Parsing API** - PDF parsing with battle mode and comparison endpoints
-2. **Battle System** - Blind A/B testing with database persistence
-3. **RAG Benchmarking** - Automated evaluation pipeline (CLI + API)
+Provides two main services:
+1. **Parsing API** - PDF parsing with 5 providers, battle mode, SSE streaming, and comparison endpoints
+2. **Battle System** - Blind A/B testing with 12+ configurations and database persistence
 
 ## Prerequisites
 
@@ -42,35 +41,25 @@ backend/
 ├── main.py                 # FastAPI entry point
 ├── api/
 │   ├── routers/
-│   │   ├── parsing.py      # Battle + parsing endpoints
-│   │   └── results.py      # RAG results endpoints
+│   │   └── parsing.py      # Battle + parsing endpoints
 │   └── models/             # Pydantic schemas
 │
 ├── src/
 │   ├── adapters/
-│   │   ├── parsing/        # Parsing adapters (3 providers)
+│   │   ├── parsing/        # Parsing adapters (5 providers)
 │   │   │   ├── llamaindex_parser.py
 │   │   │   ├── reducto_parser.py
-│   │   │   └── landingai_parser.py
-│   │   ├── llamaindex_adapter.py  # RAG adapters
-│   │   ├── landingai_adapter.py
-│   │   └── reducto_adapter.py
-│   ├── core/               # RAG orchestration
-│   │   ├── orchestrator.py
-│   │   └── ragas_evaluator.py
-│   └── datasets/           # Dataset loaders
+│   │   │   ├── landingai_parser.py
+│   │   │   ├── extendai_parser.py
+│   │   │   └── unstructured_parser.py
+│   │   └── base.py         # Base adapter interfaces
 │
 ├── config/
-│   ├── parsing_pricing.yaml    # Pricing configuration
-│   ├── providers.yaml          # Provider registry
-│   └── benchmark_*.yaml        # RAG benchmark configs
+│   └── parsing_pricing.yaml    # Pricing configuration
 │
 ├── prisma/
 │   ├── schema.prisma       # Database schema
 │   └── migrations/         # Database migrations
-│
-├── scripts/
-│   └── run_benchmark.py    # RAG benchmark CLI
 │
 └── tests/                  # Unit + integration tests
 ```
@@ -98,6 +87,15 @@ POST /api/v1/parsing/compare
   configs: dict
 }
 
+# Parse PDF with SSE streaming (real-time progress)
+POST /api/v1/parsing/compare-stream
+{
+  file_id: str,
+  providers: list[str],
+  api_keys: dict,
+  configs: dict
+}
+
 # Submit battle feedback
 POST /api/v1/parsing/battle-feedback
 {
@@ -111,19 +109,6 @@ GET /api/v1/parsing/battles?limit=10&offset=0
 
 # Get battle detail
 GET /api/v1/parsing/battles/{battle_id}
-```
-
-### RAG Benchmarking
-
-```python
-# List benchmark runs
-GET /api/v1/results?limit=50&offset=0&dataset=qasper
-
-# Get run details
-GET /api/v1/results/{run_id}
-
-# List datasets
-GET /api/v1/datasets
 ```
 
 ## Parsing Adapters
@@ -181,26 +166,34 @@ result = await parser.parse_pdf(Path("document.pdf"))
 
 **Pricing**: $0.01 per credit, 1.5-3 credits/page
 
-## Running RAG Benchmarks
+### ExtendAI Parser
 
-```bash
-# Quick test
-python scripts/run_benchmark.py --docs 1 --questions 1
+```python
+from src.adapters.parsing.extendai_parser import ExtendAIParser
 
-# Specific dataset
-python scripts/run_benchmark.py \
-  --config config/benchmark_qasper.yaml \
-  --docs 5 \
-  --questions 3
-
-# Specific providers
-python scripts/run_benchmark.py --providers llamaindex reducto
-
-# Resume interrupted run
-python scripts/run_benchmark.py --resume run_20251018_103045
+parser = ExtendAIParser(
+    api_key="ext-...",
+    mode="standard"            # or agentic-ocr
+)
+result = await parser.parse_pdf(Path("document.pdf"))
 ```
 
-Results saved to `data/results/run_YYYYMMDD_HHMMSS/`
+**Pricing**: $0.01 per credit, 2 credits/page (flat rate for both modes)
+
+### Unstructured.io Parser
+
+```python
+from src.adapters.parsing.unstructured_parser import UnstructuredParser
+
+parser = UnstructuredParser(
+    api_key="uns-...",
+    strategy="hi_res",         # fast, hi_res, auto, vlm-gpt4o, vlm-claude
+    coordinates=True
+)
+result = await parser.parse_pdf(Path("document.pdf"))
+```
+
+**Pricing**: $0.03 per credit, 1 credit/page (flat rate across all strategies)
 
 ## Database Setup
 
@@ -232,29 +225,11 @@ OPENAI_API_KEY=sk-...
 LLAMAINDEX_API_KEY=llx-...
 REDUCTO_API_KEY=red-...
 VISION_AGENT_API_KEY=va-...
+EXTENDAI_API_KEY=ext-...
+UNSTRUCTURED_API_KEY=uns-...
 
 # Optional database (for battles)
 DATABASE_URL=postgresql://...
-```
-
-### Pricing Configuration
-
-Edit `config/parsing_pricing.yaml`:
-
-```yaml
-llamaindex:
-  usd_per_credit: 0.001
-  models:
-    - parse_mode: "parse_page_with_llm"
-      credits_per_page: 3
-    # ... more modes
-
-reducto:
-  usd_per_credit: 0.015
-  models:
-    - mode: "standard"
-      credits_per_page: 1
-    # ... more modes
 ```
 
 ## Testing
@@ -281,14 +256,6 @@ pytest tests/test_llamaindex_parser.py -v
 5. Update documentation
 
 See [Development Guide](../docs/DEVELOPMENT.md) for details.
-
-### Adding New RAG Provider
-
-1. Research API docs (NO IMAGINATION rule)
-2. Create adapter in `src/adapters/yourprovider_adapter.py`
-3. Implement `BaseAdapter` interface
-4. Write unit + integration tests
-5. Update configs and documentation
 
 ## API Documentation
 

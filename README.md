@@ -14,7 +14,7 @@ Compare PDF parsers without bias using blind A/B testing:
 - Submit your preference and reveal the winners
 - Track battle history and community results
 
-**7 model configurations** across **3 providers** (LlamaIndex, Reducto, LandingAI)
+**12+ model configurations** across **5 providers** (LlamaIndex, Reducto, LandingAI, Unstructured.io, ExtendAI)
 
 [Learn more about Battle Mode →](docs/BATTLE_MODE.md)
 
@@ -26,9 +26,6 @@ Comprehensive full-document parsing comparison:
 - Download results in markdown format
 
 [Learn more about Parse Comparison →](docs/PARSE_COMPARISON.md)
-
-### RAG Benchmarking
-Also supports automated RAG provider evaluation on research datasets (Qasper, PolicyQA, SQuAD 2.0) with Ragas metrics.
 
 ## Quick Start
 
@@ -64,6 +61,8 @@ cp backend/.env.example backend/.env
 # LLAMAINDEX_API_KEY=llx-...         # For LlamaIndex parser
 # REDUCTO_API_KEY=red-...            # For Reducto parser
 # VISION_AGENT_API_KEY=va-...        # For LandingAI parser
+# UNSTRUCTURED_API_KEY=...           # For Unstructured.io parser
+# EXTENDAI_API_KEY=...               # For ExtendAI parser
 # DATABASE_URL=postgresql://...       # For battle history (optional)
 ```
 
@@ -98,6 +97,8 @@ open http://localhost:3000/battle
 | **LlamaIndex** | 3 modes | $0.003 - $0.090/page | High-res OCR, adaptive tables |
 | **Reducto** | 2 modes | $0.015 - $0.030/page | Semantic chunking, figure summaries |
 | **LandingAI** | 2 modes | $0.015 - $0.030/page | 8 chunk types, grounding metadata |
+| **ExtendAI** | 2 modes | $0.02/page | Standard & agentic-ocr, figure extraction |
+| **Unstructured.io** | 5 modes | $0.03/page | Fast, hi_res, auto, VLM (GPT-4o/Claude) |
 
 ## Architecture
 
@@ -105,8 +106,8 @@ open http://localhost:3000/battle
 DocAgent-Arena/
 ├── backend/              # FastAPI + Python parsing engine
 │   ├── main.py           # API entry point
-│   ├── api/              # REST endpoints (battle, parsing, RAG)
-│   ├── src/adapters/     # Parsing & RAG adapters
+│   ├── api/              # REST endpoints (battle, parsing)
+│   ├── src/adapters/     # Parsing adapters
 │   └── config/           # Provider configs, pricing
 ├── frontend/             # Next.js 16 web interface
 │   ├── app/battle/       # Battle mode UI
@@ -133,7 +134,7 @@ DocAgent-Arena/
 
 **Backend**: FastAPI, Prisma ORM, Supabase PostgreSQL, Python 3.11+
 **Frontend**: Next.js 16, TypeScript, Tailwind CSS, shadcn/ui
-**Parsers**: LlamaIndex, Reducto, LandingAI APIs
+**Parsers**: LlamaIndex, Reducto, LandingAI, Unstructured.io, ExtendAI APIs
 
 ## Development
 

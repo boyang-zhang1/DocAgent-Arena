@@ -262,26 +262,169 @@ adapter.initialize(
 
 ---
 
+### ExtendAI
+
+**Type**: Document Parsing Service
+
+**Description**: AI-powered document parsing with standard and agentic OCR modes. Provides page-based chunking with figure and table extraction.
+
+**Implementation**:
+- **Class**: `ExtendAIParser`
+- **Module**: `src.adapters.parsing.extendai_parser`
+- **Lines of Code**: 296
+
+**Components**:
+- Document Parser: ExtendAI API
+- Parsing Modes: standard, agentic-ocr
+- Output: Markdown format
+- Chunking: Page-based
+
+**Configuration**:
+```python
+parser.initialize(
+    api_key=extendai_api_key,
+    mode="standard"  # or "agentic-ocr"
+)
+```
+
+**Parsing Modes**:
+- **standard**: Fast parsing with basic OCR
+- **agentic-ocr**: Advanced parsing with AI-enhanced OCR for complex layouts
+
+**Document Processing**:
+- **Chunking**: Page-level granularity
+- **Output Format**: Markdown with preserved structure
+- **Figure Extraction**: Identifies and extracts figures with descriptions
+- **Table Handling**: Preserves table structure in markdown
+
+**Supported Input**:
+- Accepts PDF files via file upload
+- Base64 encoded documents supported
+- Maximum file size: Check API limits
+
+**Features**:
+- ✅ Dual parsing modes (standard/agentic)
+- ✅ Page-based chunking
+- ✅ Figure and table extraction
+- ✅ Markdown output format
+- ✅ Cost-effective pricing ($0.02/page flat rate)
+
+**Pricing**:
+- Both modes: $0.02 per page (2 credits @ $0.01/credit)
+- No mode-based price variation
+
+**Pros**:
+- Simple, predictable pricing
+- Clean markdown output
+- Fast processing (standard mode)
+- Enhanced accuracy (agentic mode)
+
+**Cons**:
+- Fewer configuration options
+- Page-level chunking only
+- Limited metadata compared to competitors
+
+---
+
+### Unstructured.io
+
+**Type**: Enterprise Document Preprocessing
+
+**Description**: Production-ready document processing with multiple strategy modes and VLM support. Provides element-based parsing with rich metadata.
+
+**Implementation**:
+- **Class**: `UnstructuredParser`
+- **Module**: `src.adapters.parsing.unstructured_parser`
+- **Lines of Code**: 341
+
+**Components**:
+- Document Parser: Unstructured.io API
+- Parsing Strategies: fast, hi_res, auto, vlm-gpt4o, vlm-claude
+- Output: Element-based JSON
+- Chunking: Element-level or custom
+
+**Configuration**:
+```python
+parser.initialize(
+    api_key=unstructured_api_key,
+    strategy="hi_res",  # fast, hi_res, auto, vlm-gpt4o, vlm-claude
+    hi_res_model_name=None,  # Optional for hi_res mode
+    coordinates=True,         # Include element coordinates
+    encoding="utf-8"          # Output encoding
+)
+```
+
+**Parsing Strategies**:
+- **fast**: Quick text extraction without layout analysis (~30s)
+- **hi_res**: OCR-based with layout detection (~60s)
+- **auto**: Automatic strategy selection based on content
+- **vlm-gpt4o**: GPT-4 Vision for complex documents
+- **vlm-claude**: Claude Vision for complex documents
+
+**Document Processing**:
+- **Element Types**: Title, Text, ListItem, Table, Image, Header, Footer, etc.
+- **Metadata**: Coordinates, page numbers, element IDs, detection confidence
+- **Output Format**: JSON with structured elements or markdown
+- **Chunking**: Configurable by element type and size
+
+**Supported Input**:
+- PDF files via file upload
+- Multiple file formats supported
+- Large document support
+
+**Features**:
+- ✅ 5 parsing strategies (flexibility for any use case)
+- ✅ VLM support (GPT-4o and Claude)
+- ✅ Rich element-level metadata
+- ✅ Coordinate-based grounding
+- ✅ Production-ready enterprise features
+- ✅ Consistent pricing across all modes
+
+**Pricing**:
+- All strategies: $0.03 per page (flat rate)
+- No strategy-based price variation
+- VLM modes same price as standard modes
+
+**Limits**:
+- Check API documentation for file size limits
+- Rate limits vary by plan
+
+**Pros**:
+- Most parsing strategy options (5 modes)
+- VLM support for challenging documents
+- Rich metadata for citations
+- Enterprise-grade reliability
+- Consistent pricing regardless of mode
+
+**Cons**:
+- Higher base price ($0.03/page)
+- More complex configuration options
+- VLM modes can be slower
+
+---
+
 ## Comparison Matrix
 
-| Feature | LlamaIndex | LandingAI | Reducto |
-|---------|-----------|-----------|---------|
-| **Type** | Full RAG | Doc Preprocessing | Doc Preprocessing |
-| **PDF Parser** | LlamaParse Cloud | LandingAI ADE | Reducto API |
-| **Embeddings** | Built-in (OpenAI) | External (OpenAI) | External (OpenAI) |
-| **Vector Store** | Built-in | Adapter (NumPy) | Adapter (NumPy) |
-| **LLM** | Built-in (OpenAI) | External (OpenAI) | External (OpenAI) |
-| **Chunking** | Fixed-size | 8 semantic types | Variable-size |
-| **Input** | PDF only | PDF only | PDF only |
-| **Grounding** | ❌ No | ✅ Bounding boxes | ✅ Bounding boxes |
-| **Multi-Modal** | Limited | ✅ 8 types | ✅ Good |
-| **AI Enrichment** | ❌ No | ❌ No | ✅ Yes |
-| **Embedding Optimization** | ❌ No | ❌ No | ✅ Yes |
-| **Async Support** | ❌ No | ✅ Yes | ✅ Yes |
-| **Max File Size (Sync)** | N/A | 50MB | No limit |
-| **Max Pages (Sync)** | N/A | 50 | No limit |
-| **Code Complexity** | Low | Medium | Medium |
-| **API Keys Required** | 2 (OpenAI + LlamaIndex) | 2 (LandingAI + OpenAI) | 2 (Reducto + OpenAI) |
+| Feature | LlamaIndex | LandingAI | Reducto | ExtendAI | Unstructured.io |
+|---------|-----------|-----------|---------|----------|----------------|
+| **Type** | Full RAG | Doc Preprocessing | Doc Preprocessing | Parsing Service | Enterprise Preprocessing |
+| **PDF Parser** | LlamaParse Cloud | LandingAI ADE | Reducto API | ExtendAI API | Unstructured.io API |
+| **Parsing Modes** | 3 modes | 2 modes | 2 modes | 2 modes | 5 strategies |
+| **Embeddings** | Built-in (OpenAI) | External (OpenAI) | External (OpenAI) | N/A | N/A |
+| **Vector Store** | Built-in | Adapter (NumPy) | Adapter (NumPy) | N/A | N/A |
+| **LLM** | Built-in (OpenAI) | External (OpenAI) | External (OpenAI) | N/A | N/A |
+| **Chunking** | Fixed-size | 8 semantic types | Variable-size | Page-based | Element-based |
+| **Input** | PDF only | PDF only | PDF only | PDF | PDF + multiple formats |
+| **Grounding** | ❌ No | ✅ Bounding boxes | ✅ Bounding boxes | ⚠️ Limited | ✅ Coordinates |
+| **Multi-Modal** | Limited | ✅ 8 types | ✅ Good | ✅ Figures/Tables | ✅ Rich elements |
+| **AI Enrichment** | ❌ No | ❌ No | ✅ Yes | ✅ Agentic mode | ❌ No |
+| **VLM Support** | ❌ No | ❌ No | ❌ No | ❌ No | ✅ GPT-4o/Claude |
+| **Embedding Optimization** | ❌ No | ❌ No | ✅ Yes | N/A | N/A |
+| **Async Support** | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Output Format** | Markdown | JSON + chunks | JSON + chunks | Markdown | JSON + elements |
+| **Pricing (per page)** | $0.003-$0.090 | $0.015-$0.030 | $0.015-$0.030 | $0.02 (flat) | $0.03 (flat) |
+| **Code Complexity** | Low | Medium | Medium | Low | Medium |
+| **API Keys Required** | 2 (OpenAI + LlamaIndex) | 2 (LandingAI + OpenAI) | 2 (Reducto + OpenAI) | 1 (ExtendAI) | 1 (Unstructured.io) |
 
 ## Performance Characteristics
 
@@ -366,4 +509,10 @@ OPENAI_API_KEY=your_openai_key
 # Reducto
 REDUCTO_API_KEY=your_reducto_key
 OPENAI_API_KEY=your_openai_key
+
+# ExtendAI
+EXTENDAI_API_KEY=your_extendai_key
+
+# Unstructured.io
+UNSTRUCTURED_API_KEY=your_unstructured_key
 ```

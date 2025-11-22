@@ -62,13 +62,15 @@ Choose which providers to compare (1-3):
 - ✅ LlamaIndex
 - ✅ Reducto
 - ✅ LandingAI
+- ✅ ExtendAI
+- ✅ Unstructured.io
 
 **Selection Strategy**:
-- **All 3**: Comprehensive comparison, highest cost
-- **2 providers**: Balance comparison vs cost
+- **All 5**: Comprehensive comparison, highest cost
+- **2-3 providers**: Balance comparison vs cost
 - **1 provider**: Just parse and download (no comparison)
 
-**Recommendation**: Start with 2 providers for your use case, expand to 3 once you know requirements.
+**Recommendation**: Start with 2-3 providers for your use case, expand once you know requirements.
 
 ### Step 3: Configure Models
 
@@ -106,6 +108,28 @@ For each selected provider, configure parsing options:
 - General use: DPT-2 Mini
 - Detailed extraction: DPT-2
 
+#### ExtendAI Configuration
+
+| Option | Choices | Impact |
+|--------|---------|--------|
+| Mode | Standard, Agentic OCR | OCR quality |
+
+**Recommendations**:
+- General docs: Standard mode
+- Complex layouts: Agentic OCR mode
+
+#### Unstructured.io Configuration
+
+| Option | Choices | Impact |
+|--------|---------|--------|
+| Strategy | Fast, Hi-Res, Auto, VLM GPT-4o, VLM Claude | Speed vs quality |
+
+**Recommendations**:
+- Quick extraction: Fast strategy
+- Standard OCR: Hi-Res strategy
+- Let system choose: Auto strategy
+- Complex documents: VLM GPT-4o or VLM Claude
+
 ### Step 4: Review Cost Estimate
 
 Before parsing, system shows estimated total cost:
@@ -115,8 +139,10 @@ Before parsing, system shows estimated total cost:
 LlamaIndex (Cost-effective):  20 pages × 3 credits × $0.001 = $0.060
 Reducto (Standard):           20 pages × 1 credit  × $0.015 = $0.300
 LandingAI (DPT-2 Mini):       20 pages × 1.5 credits × $0.01 = $0.300
+ExtendAI (Standard):          20 pages × 2 credits × $0.01  = $0.400
+Unstructured.io (Hi-Res):     20 pages × 1 credit  × $0.03  = $0.600
 ───────────────────────────────────────────────────────────────
-Total Estimated Cost: $0.660
+Total Estimated Cost: $1.660
 ```
 
 **Estimation Accuracy**:
@@ -156,13 +182,13 @@ Results displayed side-by-side with synchronized navigation.
 
 **Comparison View**:
 ```
-┌─────────────────┬─────────────────┬─────────────────┐
-│  LlamaIndex     │  Reducto        │  LandingAI      │
-├─────────────────┼─────────────────┼─────────────────┤
-│  Page 1 content │  Page 1 content │  Page 1 content │
-│  (markdown)     │  (markdown)     │  (markdown)     │
-└─────────────────┴─────────────────┴─────────────────┘
-         [<] [Page 1 / 20] [>]
+┌─────────────────┬─────────────────┬─────────────────┬──────────────────┐
+│  LlamaIndex     │  Reducto        │  ExtendAI       │  Unstructured.io │
+├─────────────────┼─────────────────┼─────────────────┼──────────────────┤
+│  Page 1 content │  Page 1 content │  Page 1 content │  Page 1 content  │
+│  (markdown)     │  (markdown)     │  (markdown)     │  (markdown)      │
+└─────────────────┴─────────────────┴─────────────────┴──────────────────┘
+                    [<] [Page 1 / 20] [>]
 ```
 
 **Navigation**:
@@ -234,8 +260,10 @@ Provider        | Pages | Credits | USD/Credit | Total Cost
 LlamaIndex      |  20   |  60     | $0.001     | $0.060
 Reducto         |  20   |  20     | $0.015     | $0.300
 LandingAI       |  20   |  30     | $0.010     | $0.300
+ExtendAI        |  20   |  40     | $0.010     | $0.400
+Unstructured.io |  20   |  20     | $0.030     | $0.600
 ─────────────────────────────────────────────────────────
-Total Actual: $0.660  (Estimated: $0.660)
+Total Actual: $1.660  (Estimated: $1.660)
 ```
 
 **Cost Analysis**:
@@ -301,9 +329,10 @@ Find the cheapest acceptable quality:
 Choose optimal provider for your document type:
 
 **Document Profiling**:
-- Mostly text? → LlamaIndex Cost-effective
+- Mostly text? → LlamaIndex Cost-effective or ExtendAI Standard
 - Heavy tables? → Reducto or LandingAI
-- Lots of figures? → Reducto Complex VLM
+- Lots of figures? → Reducto Complex VLM or ExtendAI Agentic OCR
+- Complex layouts? → Unstructured.io VLM modes
 - Mixed content? → Compare all
 
 **Build a Matrix**:
@@ -311,7 +340,8 @@ Choose optimal provider for your document type:
 |----------|---------------|------|-----------|
 | Research papers | LlamaIndex | Cost-effective | $0.003 |
 | Financial reports | Reducto | Standard | $0.015 |
-| Technical manuals | LandingAI | DPT-2 | $0.030 |
+| Technical manuals | ExtendAI | Standard | $0.020 |
+| Complex documents | Unstructured.io | Hi-Res or VLM | $0.030 |
 
 ### Quality Tracking
 
@@ -408,11 +438,13 @@ Content-Type: application/json
 
 {
   "file_id": "uuid-string",
-  "providers": ["llamaindex", "reducto", "landingai"],
+  "providers": ["llamaindex", "reducto", "landingai", "extendai", "unstructured"],
   "api_keys": {
     "llamaindex": "llx-...",
     "reducto": "red-...",
-    "landingai": "va-..."
+    "landingai": "va-...",
+    "extendai": "ext-...",
+    "unstructured": "uns-..."
   },
   "configs": {
     "llamaindex": {
@@ -425,6 +457,12 @@ Content-Type: application/json
     },
     "landingai": {
       "model": "dpt-2-latest"
+    },
+    "extendai": {
+      "mode": "standard"
+    },
+    "unstructured": {
+      "strategy": "hi_res"
     }
   }
 }

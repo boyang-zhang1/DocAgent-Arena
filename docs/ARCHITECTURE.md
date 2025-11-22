@@ -35,6 +35,7 @@ DocAgent-Arena consists of three main layers:
   - `POST /api/v1/parsing/upload` - Upload PDF file (returns file_id)
   - `POST /api/v1/parsing/page-count` - Get page count using pypdf
   - `POST /api/v1/parsing/compare` - Parse PDF with selected providers and configs
+  - `POST /api/v1/parsing/compare-stream` - Parse with real-time SSE progress updates
   - `GET /api/v1/parsing/download-result/{file_id}/{provider}` - Download markdown result
 - **Health Check**:
   - `GET /api/health` - Health check
@@ -57,10 +58,12 @@ DocAgent-Arena consists of three main layers:
   - `CostEstimation.tsx` - Pre-parse cost breakdown with provider-specific pricing
   - `FileUploadZone.tsx` - Drag-and-drop upload with validation
   - `PDFViewer.tsx` - PDF preview with page navigation
-  - `MarkdownViewer.tsx` - Parsed markdown display with syntax highlighting
+  - `MarkdownViewer.tsx` - Parsed markdown display with syntax highlighting, LaTeX toggle
   - `PageNavigator.tsx` - Page navigation controls
   - `CostDisplay.tsx` - Actual cost breakdown after parsing
   - `ProcessingTimeDisplay.tsx` - Processing time metrics
+- **Shared Hooks** (`hooks/`):
+  - `usePDFViewer.ts` - Shared PDF viewer state management for battle and parse pages
 - **API Client**: Type-safe wrapper in `frontend/lib/api-client.ts`
 - **Types**: Full TypeScript coverage matching backend schemas
 - **Features**:
@@ -69,6 +72,10 @@ DocAgent-Arena consists of three main layers:
   - Interactive metric comparison charts with selectable metrics
   - Provider performance visualization
   - localStorage persistence for API keys and configs
+  - Real-time SSE streaming for parallel parse execution
+  - Debug mode with request/response logging
+  - LaTeX rendering toggle in markdown viewer
+  - Provider carousel with dual response dropdowns
 
 ### Database Schema (Prisma)
 - **7 Models**: User, BenchmarkRun, Document, Question, ProviderResult, QuestionResult, ApiRequest
@@ -144,6 +151,19 @@ class BaseParseAdapter(ABC):
   - 8 semantic chunk types (text, table, figure, logo, card, etc.)
   - Grounding metadata with bounding boxes
   - Returns page-by-page markdown
+
+- **extendai_parser.py** - ExtendAI API
+  - Configurable modes: standard (2 credits/page) or agentic-ocr (2 credits/page)
+  - Page-based chunking with figure and table extraction
+  - Clean markdown output format
+  - Flat pricing: $0.02/page for both modes
+
+- **unstructured_parser.py** - Unstructured.io API
+  - 5 parsing strategies: fast, hi_res, auto, vlm-gpt4o, vlm-claude
+  - Element-based parsing with coordinate metadata
+  - VLM support for complex documents (GPT-4o and Claude)
+  - Flat pricing: $0.03/page across all strategies
+  - Rich metadata including bounding boxes and element types
 
 **Pricing Configuration** (`backend/config/parsing_pricing.yaml`):
 - Provider-specific pricing (USD per credit)
@@ -241,7 +261,7 @@ RAGResponse(answer, context, metadata, latency_ms, tokens_used)
 
 1. **Human** (`config/providers.yaml`): name + api_doc_url
 2. **AI** (`config/providers.generated.yaml`): detailed API specs from research
-3. **Secrets** (`.env`): API keys (OPENAI_API_KEY, LLAMAINDEX_API_KEY, VISION_AGENT_API_KEY, REDUCTO_API_KEY)
+3. **Secrets** (`.env`): API keys (OPENAI_API_KEY, LLAMAINDEX_API_KEY, VISION_AGENT_API_KEY, REDUCTO_API_KEY, UNSTRUCTURED_API_KEY, EXTENDAI_API_KEY)
 
 ## Execution Flow (Parallel Task Model)
 
@@ -351,16 +371,19 @@ RAGResponse(answer, context, metadata, latency_ms, tokens_used)
    └─ User confirms to proceed
 
 3. Parsing Execution (Backend API)
-   POST /api/v1/parsing/compare
+   POST /api/v1/parsing/compare (or /compare-stream for SSE)
    ├─ Validate file exists (TEMP_DIR/{file_id}.pdf)
    ├─ Initialize parsers with API keys and configs:
    │  ├─ LlamaIndexParser(api_key, parse_mode, model)
    │  ├─ ReductoParser(api_key, summarize_figures)
-   │  └─ LandingAIParser(api_key)
-   └─ Execute parsing in parallel (asyncio.gather):
-       ├─ Each parser.parse_pdf(pdf_path) runs independently
-       ├─ Returns ParseResult with pages, markdown, usage
-       └─ Exception handling per provider (don't fail all)
+   │  ├─ LandingAIParser(api_key)
+   │  ├─ ExtendAIParser(api_key, mode)
+   │  └─ UnstructuredParser(api_key, strategy)
+   ├─ Execute parsing in parallel (asyncio.gather):
+   │  ├─ Each parser.parse_pdf(pdf_path) runs independently
+   │  ├─ Returns ParseResult with pages, markdown, usage
+   │  └─ Exception handling per provider (don't fail all)
+   └─ Optional: Stream progress via SSE (real-time updates)
 
 4. Cost Calculation (Backend)
    For each provider result:
@@ -385,10 +408,12 @@ RAGResponse(answer, context, metadata, latency_ms, tokens_used)
 
 **Key Features:**
 - **Async Execution**: All parsers run in parallel using asyncio
+- **SSE Streaming**: Real-time progress updates via Server-Sent Events
 - **Independent Failures**: One provider failing doesn't affect others
 - **Cost Transparency**: Estimate shown before parsing, actual cost after
 - **Configurable Options**: Different parse modes/models affect cost and quality
 - **localStorage Persistence**: API keys and configs saved in browser
+- **Debug Mode**: Request/response logging for all parsers
 - **No Database**: Parsing results not persisted (temporary files only)
 
 **Pricing Model:**
@@ -419,6 +444,28 @@ landingai:
   models:
     - model: "dpt-2"
       credits_per_page: 3        # $0.030/page
+
+extendai:
+  usd_per_credit: 0.01
+  models:
+    - mode: "standard"
+      credits_per_page: 2        # $0.020/page
+    - mode: "agentic-ocr"
+      credits_per_page: 2        # $0.020/page
+
+unstructured:
+  usd_per_credit: 0.03
+  models:
+    - strategy: "fast"
+      credits_per_page: 1        # $0.030/page
+    - strategy: "hi_res"
+      credits_per_page: 1        # $0.030/page
+    - strategy: "auto"
+      credits_per_page: 1        # $0.030/page
+    - strategy: "vlm-gpt4o"
+      credits_per_page: 1        # $0.030/page
+    - strategy: "vlm-claude"
+      credits_per_page: 1        # $0.030/page
 ```
 
 **Legacy Support**:
