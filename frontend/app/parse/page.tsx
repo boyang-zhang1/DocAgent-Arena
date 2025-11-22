@@ -12,8 +12,9 @@ import { ProcessingTimeDisplay } from "@/components/parse/ProcessingTimeDisplay"
 import { PageNavigator } from "@/components/parse/PageNavigator";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ContactIcons } from "@/components/ui/ContactIcons";
-import { FileText, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { FileText, Loader2, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
 import type { LlamaIndexConfig, ReductoConfig, LandingAIConfig } from "@/types/api";
@@ -77,6 +78,9 @@ export default function ParsePage() {
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [providerStatus, setProviderStatus] = useState<Record<string, 'pending' | 'running' | 'completed' | 'error'>>({});
+  const [displayedProviders, setDisplayedProviders] = useState<string[]>([]);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [enableLatex, setEnableLatex] = useState(false);
 
   const { pricingMap, loading: pricingLoading, error: pricingError } = useProviderPricing();
 
@@ -173,6 +177,10 @@ export default function ParsePage() {
       setTotalPages(firstProvider?.total_pages || 0);
       setCurrentPage(1);
 
+      // Initialize displayed providers (all by default)
+      setDisplayedProviders(Object.keys(data.results));
+      setCarouselIndex(0);
+
       // Calculate costs
       try {
         const costData = await apiClient.calculateParseCost(data);
@@ -220,6 +228,50 @@ export default function ParsePage() {
 
   // Get list of providers that were run (have results)
   const runProviders = parseResults ? Object.keys(parseResults) : [];
+
+  // Toggle provider display
+  const toggleProviderDisplay = (provider: string) => {
+    setDisplayedProviders((prev) => {
+      if (prev.includes(provider)) {
+        // Remove provider
+        const newProviders = prev.filter((p) => p !== provider);
+        // Reset carousel if needed
+        if (newProviders.length <= 3) {
+          setCarouselIndex(0);
+        } else if (carouselIndex > newProviders.length - 3) {
+          setCarouselIndex(Math.max(0, newProviders.length - 3));
+        }
+        return newProviders;
+      } else {
+        // Add provider (maintain order from runProviders)
+        const newProviders = runProviders.filter(
+          (p) => prev.includes(p) || p === provider
+        );
+        return newProviders;
+      }
+    });
+  };
+
+  // Carousel navigation
+  const canGoPrev = carouselIndex > 0;
+  const canGoNext = displayedProviders.length > 3 && carouselIndex < displayedProviders.length - 3;
+
+  const handlePrevPage = () => {
+    if (canGoPrev) {
+      setCarouselIndex(carouselIndex - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (canGoNext) {
+      setCarouselIndex(carouselIndex + 1);
+    }
+  };
+
+  // Get providers to display in carousel (max 3 at a time)
+  const visibleProviders = displayedProviders.length <= 3
+    ? displayedProviders
+    : displayedProviders.slice(carouselIndex, carouselIndex + 3);
 
   return (
     <div className="container mx-auto p-6 max-w-full px-8">
@@ -386,17 +438,92 @@ export default function ParsePage() {
                 />
               )}
 
-              {/* Provider Comparison - Dynamic columns based on number of providers */}
+              {/* Provider Selection Checkboxes */}
+              {runProviders.length > 1 && (
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center gap-6 flex-wrap">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Select Providers:
+                    </span>
+                    {runProviders.map((provider) => (
+                      <div key={provider} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`provider-${provider}`}
+                          checked={displayedProviders.includes(provider)}
+                          onCheckedChange={() => toggleProviderDisplay(provider)}
+                        />
+                        <label
+                          htmlFor={`provider-${provider}`}
+                          className="cursor-pointer"
+                        >
+                          <ProviderLabel provider={provider} size={20} />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Render Options */}
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-6 flex-wrap">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Render Options:
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable-latex"
+                      checked={enableLatex}
+                      onCheckedChange={(checked) => setEnableLatex(checked === true)}
+                    />
+                    <label
+                      htmlFor="enable-latex"
+                      className="text-sm cursor-pointer text-gray-600 dark:text-gray-400"
+                    >
+                      Enable LaTeX formula rendering ($...$)
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Carousel Navigation */}
+              {displayedProviders.length > 3 && (
+                <div className="flex items-center justify-center gap-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePrevPage}
+                    disabled={!canGoPrev}
+                  >
+                    <ChevronLeft className="h-4 w-4 mr-1" />
+                    Previous
+                  </Button>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    Showing {carouselIndex + 1}-{Math.min(carouselIndex + 3, displayedProviders.length)} of {displayedProviders.length}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleNextPage}
+                    disabled={!canGoNext}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Provider Comparison - Dynamic columns based on number of visible providers */}
               <div
                 className={`grid gap-8 ${
-                  runProviders.length === 1
+                  visibleProviders.length === 1
                     ? "grid-cols-1 max-w-4xl mx-auto"
-                    : runProviders.length === 2
+                    : visibleProviders.length === 2
                     ? "grid-cols-1 md:grid-cols-2"
                     : "grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
                 }`}
               >
-                {runProviders.map((provider) => (
+                {visibleProviders.map((provider) => (
                   <div key={provider} className="space-y-4">
                     <MarkdownViewer
                       title={
@@ -409,6 +536,7 @@ export default function ParsePage() {
                       markdown={getProviderMarkdown(provider)}
                       metadata={getProviderMetadata(provider)}
                       provider={provider}
+                      disableMathRendering={!enableLatex}
                     />
 
                     {/* Info Cards Grid */}

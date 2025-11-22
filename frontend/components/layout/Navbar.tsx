@@ -17,11 +17,6 @@ export function Navbar() {
       label: 'Parse & Compare',
       isActive: pathname?.startsWith('/parse'),
     },
-    {
-      href: '/datasets',
-      label: 'Datasets',
-      isActive: pathname?.startsWith('/datasets') || pathname?.startsWith('/results'),
-    },
   ];
 
   return (

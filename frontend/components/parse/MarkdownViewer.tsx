@@ -89,7 +89,7 @@ function ExtendAIFigureBlock({ content, caption, type }: { content: string; capt
 }
 
 // Component to render ExtendAI markdown with figure blocks
-function ExtendAIMarkdownRenderer({ markdown, components }: { markdown: string; components: Components }) {
+function ExtendAIMarkdownRenderer({ markdown, components, disableMathRendering = false }: { markdown: string; components: Components; disableMathRendering?: boolean }) {
   const figureRegex = /<figure([^>]*)>([\s\S]*?)<\/figure>/g;
   const parts: ReactNode[] = [];
   let lastIndex = 0;
@@ -104,8 +104,8 @@ function ExtendAIMarkdownRenderer({ markdown, components }: { markdown: string; 
         parts.push(
           <ReactMarkdown
             key={`md-${key}`}
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex, rehypeRaw]}
+            remarkPlugins={disableMathRendering ? [remarkGfm] : [remarkGfm, remarkMath]}
+            rehypePlugins={disableMathRendering ? [rehypeRaw] : [rehypeKatex, rehypeRaw]}
             components={components}
           >
             {beforeText}
@@ -149,8 +149,8 @@ function ExtendAIMarkdownRenderer({ markdown, components }: { markdown: string; 
       parts.push(
         <ReactMarkdown
           key={`md-${key}`}
-          remarkPlugins={[remarkGfm, remarkMath]}
-          rehypePlugins={[rehypeKatex, rehypeRaw]}
+          remarkPlugins={disableMathRendering ? [remarkGfm] : [remarkGfm, remarkMath]}
+          rehypePlugins={disableMathRendering ? [rehypeRaw] : [rehypeKatex, rehypeRaw]}
           components={components}
         >
           {afterText}
@@ -171,6 +171,7 @@ interface MarkdownViewerProps {
   footer?: ReactNode;
   cardClassName?: string;
   provider?: string;
+  disableMathRendering?: boolean;
 }
 
 export function MarkdownViewer({
@@ -182,13 +183,16 @@ export function MarkdownViewer({
   footer,
   cardClassName,
   provider,
+  disableMathRendering = false,
 }: MarkdownViewerProps) {
-  // Preprocess markdown to normalize LaTeX syntax
+  // Preprocess markdown to normalize LaTeX syntax (only when math rendering is enabled)
   // Convert \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
   const processedMarkdown = markdown
-    ? markdown
-        .replace(/\\\((.*?)\\\)/g, (_, content) => `$${content}$`)  // Inline: \(...\) -> $...$
-        .replace(/\\\[(.*?)\\\]/gs, (_, content) => `$$\n${content}\n$$`)  // Display: \[...\] -> $$...$$
+    ? (disableMathRendering
+        ? markdown
+        : markdown
+            .replace(/\\\((.*?)\\\)/g, (_, content) => `$${content}$`)  // Inline: \(...\) -> $...$
+            .replace(/\\\[(.*?)\\\]/gs, (_, content) => `$$\n${content}\n$$`))  // Display: \[...\] -> $$...$$
     : undefined;
 
   const markdownComponents: Components = {
@@ -301,11 +305,12 @@ export function MarkdownViewer({
                 <ExtendAIMarkdownRenderer
                   markdown={processedMarkdown}
                   components={markdownComponents}
+                  disableMathRendering={disableMathRendering}
                 />
               ) : (
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm, remarkMath]}
-                  rehypePlugins={[rehypeKatex, rehypeRaw]}
+                  remarkPlugins={disableMathRendering ? [remarkGfm] : [remarkGfm, remarkMath]}
+                  rehypePlugins={disableMathRendering ? [rehypeRaw] : [rehypeKatex, rehypeRaw]}
                   components={markdownComponents}
                 >
                   {processedMarkdown}

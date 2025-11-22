@@ -11,6 +11,7 @@ import { BattleHistory } from "@/components/parse/BattleHistory";
 import { ModelSelectionCard } from "@/components/battle/ModelSelectionCard";
 import { BattleCharacters } from "@/components/battle/BattleCharacters";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ContactIcons } from "@/components/ui/ContactIcons";
 import { Loader2, FileText, Swords, CheckCircle2, XCircle } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
@@ -83,6 +84,7 @@ export default function BattlePage() {
 
   const [selectedConfigs, setSelectedConfigs] = useState<BattleConfigSelection>(getDefaultBattleConfigs());
   const [battleConfigs, setBattleConfigs] = useState<BattleConfigSelection | null>(null);
+  const [enableLatex, setEnableLatex] = useState(false);
 
   const { pricingMap, loading: pricingLoading, error: pricingError } = useProviderPricing();
 
@@ -534,6 +536,28 @@ export default function BattlePage() {
                 )}
               </div>
 
+              {/* Render Options */}
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-6 flex-wrap">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Render Options:
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="enable-latex-battle"
+                      checked={enableLatex}
+                      onCheckedChange={(checked) => setEnableLatex(checked === true)}
+                    />
+                    <label
+                      htmlFor="enable-latex-battle"
+                      className="text-sm cursor-pointer text-gray-600 dark:text-gray-400"
+                    >
+                      Enable LaTeX formula rendering ($...$)
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid gap-6 md:grid-cols-2 items-stretch">
                 {battleInfo.map(({ assignment, markdown, metadata, cost }) => {
                   const label = assignment.label;
@@ -607,6 +631,7 @@ export default function BattlePage() {
                       cardClassName={cardClass}
                       footer={footer}
                       provider={provider}
+                      disableMathRendering={!enableLatex}
                     />
                   );
                 })}

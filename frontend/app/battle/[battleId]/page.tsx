@@ -6,8 +6,10 @@ import { ArrowLeft, Loader2, Trophy, Minus, Users } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { MarkdownViewer } from "@/components/parse/MarkdownViewer";
 import { CostDisplay } from "@/components/parse/CostDisplay";
+import { ProcessingTimeDisplay } from "@/components/parse/ProcessingTimeDisplay";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
@@ -24,6 +26,7 @@ export default function BattleDetailPage() {
   const [battle, setBattle] = useState<BattleDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [enableLatex, setEnableLatex] = useState(false);
 
   const { pricingMap } = useProviderPricing();
 
@@ -204,6 +207,29 @@ export default function BattleDetailPage() {
       {/* Provider Results */}
       <div>
         <h2 className="text-2xl font-semibold mb-4">Battle Results</h2>
+
+        {/* Render Options */}
+        <div className="mb-4 bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-6 flex-wrap">
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Render Options:
+            </span>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="enable-latex"
+                checked={enableLatex}
+                onCheckedChange={(checked) => setEnableLatex(checked === true)}
+              />
+              <label
+                htmlFor="enable-latex"
+                className="text-sm cursor-pointer text-gray-600 dark:text-gray-400"
+              >
+                Enable LaTeX formula rendering ($...$)
+              </label>
+            </div>
+          </div>
+        </div>
+
         <div className="grid gap-6 md:grid-cols-2 items-start">
           {providers.map((provider) => {
             const assignment = battle.assignments.find((a) => a.label === provider.label);
@@ -265,19 +291,29 @@ export default function BattleDetailPage() {
               </div>
             );
 
-            const footer = (provider.cost_usd !== null && provider.cost_usd !== undefined) ? (
-              <CostDisplay
-                cost={{
-                  provider: provider.provider,
-                  credits: provider.cost_credits || 0,
-                  usd_per_credit: provider.cost_usd / (provider.cost_credits || 1),
-                  total_usd: provider.cost_usd,
-                  details: {},
-                }}
-                providerName={displayName}
-              />
-            ) : (
-              <p className="text-xs text-gray-500">Cost data unavailable</p>
+            const footer = (
+              <div className="grid grid-cols-2 gap-3">
+                <ProcessingTimeDisplay
+                  processingTime={provider.content.processing_time || 0}
+                  providerName={displayName}
+                />
+                {(provider.cost_usd !== null && provider.cost_usd !== undefined) ? (
+                  <CostDisplay
+                    cost={{
+                      provider: provider.provider,
+                      credits: provider.cost_credits || 0,
+                      usd_per_credit: provider.cost_usd / (provider.cost_credits || 1),
+                      total_usd: provider.cost_usd,
+                      details: {},
+                    }}
+                    providerName={displayName}
+                  />
+                ) : (
+                  <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <p className="text-xs text-gray-500">Cost data unavailable</p>
+                  </div>
+                )}
+              </div>
             );
 
             return (
@@ -287,6 +323,7 @@ export default function BattleDetailPage() {
                 markdown={markdown}
                 cardClassName={cardClass}
                 footer={footer}
+                disableMathRendering={!enableLatex}
               />
             );
           })}
