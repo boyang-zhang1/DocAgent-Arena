@@ -152,18 +152,6 @@ export function BattleCharacters({
           color="#f97316" // Orange
         />
       </div>
-
-      {/* Status text below robots */}
-      {isParsing && (
-        <motion.div
-          className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 text-sm font-medium text-purple-600 dark:text-purple-400"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.3 }}
-        >
-          Battle in progress...
-        </motion.div>
-      )}
     </motion.div>
   );
 }

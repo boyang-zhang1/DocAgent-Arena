@@ -4,7 +4,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Dict, Any, List, Union
+from typing import Dict, Any, List, Union, Optional
 from collections import defaultdict
 
 from landingai_ade import LandingAIADE
@@ -141,13 +141,14 @@ class LandingAIParser(BaseParseAdapter):
 
         return markdown
 
-    async def parse_pdf(self, pdf_path: Path) -> ParseResult:
+    async def parse_pdf(self, pdf_path: Path, debug_info: Optional[Dict[str, Any]] = None) -> ParseResult:
         """
         Parse PDF using LandingAI with page-by-page splitting.
         Automatically tries next API key in pool if current one fails due to quota/credit issues.
 
         Args:
             pdf_path: Path to the PDF file
+            debug_info: Optional debug configuration for saving request/response
 
         Returns:
             ParseResult with markdown content per page
@@ -157,6 +158,19 @@ class LandingAIParser(BaseParseAdapter):
         """
         start_time = time.time()
         last_error = None
+
+        # Save request parameters if debug mode is enabled
+        if debug_info and debug_info.get("enabled"):
+            request_data = {
+                "provider": "landingai",
+                "pdf_path": str(pdf_path),
+                "config": {
+                    "model": self.model,
+                    "credits_per_page": self.credits_per_page,
+                    "num_api_keys": len(self.api_keys),
+                },
+            }
+            self._save_debug_file(debug_info, "landingai", request_data, "request")
 
         # Try each API key in sequence
         for key_index, api_key in enumerate(self.api_keys):
@@ -210,6 +224,10 @@ class LandingAIParser(BaseParseAdapter):
         else:
             # Try to convert to dict
             response_data = dict(parse_response)
+
+        # Save raw response if debug mode is enabled
+        if debug_info and debug_info.get("enabled"):
+            self._save_debug_file(debug_info, "landingai", response_data, "response")
 
         # Extract metadata
         metadata = response_data.get("metadata", {})

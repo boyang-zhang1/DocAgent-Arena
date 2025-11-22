@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { FileUploadZone } from "@/components/parse/FileUploadZone";
 import { ProviderConfigForm } from "@/components/parse/ProviderConfigForm";
 import { PDFViewer } from "@/components/parse/PDFViewer";
@@ -55,6 +56,9 @@ interface ProviderConfigs {
 }
 
 export default function ParsePage() {
+  const searchParams = useSearchParams();
+  const debugMode = searchParams.get("mode") === "debug";
+
   const [selectedProviders, setSelectedProviders] = useState<string[]>([
     "llamaindex",
     "reducto",
@@ -131,6 +135,7 @@ export default function ParsePage() {
         providers: selectedProviders,
         configs,
         filename: fileName || undefined,
+        debug: debugMode,
       });
       setParseResults(data.results);
 

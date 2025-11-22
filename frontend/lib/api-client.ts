@@ -225,6 +225,7 @@ class ApiClient {
     configs?: Record<string, any>;
     pageNumber?: number;
     filename?: string;
+    debug?: boolean;
   }): Promise<ParseCompareResponse> {
     const payload: ParseCompareRequest = {
       file_id: params.fileId,
@@ -241,6 +242,9 @@ class ApiClient {
     }
     if (params.filename) {
       payload.filename = params.filename;
+    }
+    if (params.debug !== undefined) {
+      payload.debug = params.debug;
     }
 
     return this.fetchWithError<ParseCompareResponse>('/api/v1/parse/compare', {

@@ -3,7 +3,7 @@
 import os
 import time
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from llama_parse import LlamaParse
 
@@ -31,12 +31,13 @@ class LlamaIndexParser(BaseParseAdapter):
         self.parse_mode = parse_mode
         self.model = model
 
-    async def parse_pdf(self, pdf_path: Path) -> ParseResult:
+    async def parse_pdf(self, pdf_path: Path, debug_info: Optional[Dict[str, Any]] = None) -> ParseResult:
         """
         Parse PDF using LlamaParse with page-by-page splitting.
 
         Args:
             pdf_path: Path to the PDF file
+            debug_info: Optional debug configuration for saving request/response
 
         Returns:
             ParseResult with markdown content per page
@@ -59,10 +60,45 @@ class LlamaIndexParser(BaseParseAdapter):
         if self.parse_mode == "parse_page_with_agent":
             parser_kwargs["model"] = self.model
 
+        # Save request parameters if debug mode is enabled
+        if debug_info and debug_info.get("enabled"):
+            request_data = {
+                "provider": "llamaindex",
+                "pdf_path": str(pdf_path),
+                "config": parser_kwargs,
+            }
+            self._save_debug_file(debug_info, "llamaindex", request_data, "request")
+
         parser = LlamaParse(**parser_kwargs)
 
         # Parse the PDF (async)
         result = await parser.aparse(str(pdf_path))
+
+        # Save raw response if debug mode is enabled
+        if debug_info and debug_info.get("enabled"):
+            # Capture the full result structure
+            response_data = {
+                "job_id": getattr(result, "job_id", None),
+                "total_pages": len(result.pages) if hasattr(result, 'pages') else 0,
+                "pages": [
+                    {
+                        "page_number": i + 1,
+                        "markdown": page.md if hasattr(page, 'md') else None,
+                        "text": page.text if hasattr(page, 'text') else None,
+                        "layout": page.layout if hasattr(page, 'layout') else None,
+                        "structured_data": page.structuredData if hasattr(page, 'structuredData') else None,
+                        "images": [
+                            {
+                                "name": getattr(img, 'name', None),
+                                "url": getattr(img, 'url', None),
+                            } if hasattr(img, 'name') or hasattr(img, 'url') else str(img)
+                            for img in (page.images or [])
+                        ] if hasattr(page, 'images') else [],
+                    }
+                    for i, page in enumerate(result.pages)
+                ] if hasattr(result, 'pages') else [],
+            }
+            self._save_debug_file(debug_info, "llamaindex", response_data, "response")
 
         # Debug: Save the raw result to see its structure (optional, only if temp dir exists)
         import json

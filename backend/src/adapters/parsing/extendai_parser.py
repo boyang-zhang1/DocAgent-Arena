@@ -2,7 +2,7 @@
 
 import time
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from extend_ai import Extend
 from extend_ai.core.request_options import RequestOptions
@@ -37,12 +37,13 @@ class ExtendAIParser(BaseParseAdapter):
             additional_headers={"x-extend-api-version": "2025-04-21"}
         )
 
-    async def parse_pdf(self, pdf_path: Path) -> ParseResult:
+    async def parse_pdf(self, pdf_path: Path, debug_info: Optional[Dict[str, Any]] = None) -> ParseResult:
         """
         Parse PDF using ExtendAI SDK and map chunks to pages.
 
         Args:
             pdf_path: Path to the PDF file
+            debug_info: Optional debug configuration for saving request/response
 
         Returns:
             ParseResult with chunks mapped to pages
@@ -58,40 +59,76 @@ class ExtendAIParser(BaseParseAdapter):
 
         file_id = upload_response.file.id
 
+        # Save request parameters if debug mode is enabled
+        parse_config = {
+            "target": "markdown",
+            "chunkingStrategy": {
+                "type": "page",
+            },
+            "blockOptions": {
+                "figures": {
+                    "enabled": True,
+                    "figureImageClippingEnabled": True,
+                },
+                "tables": {
+                    "enabled": True,
+                    "targetFormat": "markdown",
+                    "tableHeaderContinuationEnabled": False,
+                },
+                "text": {
+                    "signatureDetectionEnabled": True,
+                },
+            },
+            "advancedOptions": {
+                "pageRotationEnabled": True,
+                "agenticOcrEnabled": self.agentic_ocr,
+            },
+        }
+
+        if debug_info and debug_info.get("enabled"):
+            request_data = {
+                "provider": "extendai",
+                "pdf_path": str(pdf_path),
+                "file_id": file_id,
+                "config": parse_config,
+            }
+            self._save_debug_file(debug_info, "extendai", request_data, "request")
+
         # Step 2: Parse with page chunking using SDK
         parse_response = self.client.parse(
             file={
                 "fileId": file_id,
             },
-            config={
-                "target": "markdown",
-                "chunkingStrategy": {
-                    "type": "page",
-                },
-                "blockOptions": {
-                    "figures": {
-                        "enabled": True,
-                        "figureImageClippingEnabled": True,
-                    },
-                    "tables": {
-                        "enabled": True,
-                        "targetFormat": "markdown",
-                        "tableHeaderContinuationEnabled": False,
-                    },
-                    "text": {
-                        "signatureDetectionEnabled": True,
-                    },
-                },
-                "advancedOptions": {
-                    "pageRotationEnabled": True,
-                    "agenticOcrEnabled": self.agentic_ocr,
-                },
-            },
+            config=parse_config,
             request_options=self.request_options
         )
 
         # Extract chunks from response
         chunks = parse_response.chunks if hasattr(parse_response, 'chunks') else []
+
+        # Save raw response if debug mode is enabled
+        if debug_info and debug_info.get("enabled"):
+            # Convert chunks to JSON-serializable format using Pydantic serialization
+            def serialize_obj(obj):
+                """Helper to serialize Pydantic objects or dicts"""
+                if hasattr(obj, 'model_dump'):
+                    return obj.model_dump()
+                elif hasattr(obj, 'dict'):
+                    return obj.dict()
+                elif isinstance(obj, dict):
+                    return obj
+                else:
+                    return str(obj)
+
+            response_data = {
+                "parser_run_id": parse_response.id if hasattr(parse_response, 'id') else None,
+                "status": parse_response.status if hasattr(parse_response, 'status') else None,
+                "total_chunks": len(chunks),
+                "chunks": [serialize_obj(chunk) for chunk in chunks],
+                "usage": serialize_obj(parse_response.usage) if hasattr(parse_response, 'usage') else None,
+                "metrics": serialize_obj(parse_response.metrics) if hasattr(parse_response, 'metrics') else None,
+            }
+            self._save_debug_file(debug_info, "extendai", response_data, "response")
 
         # Map chunks to pages
         pages = self._map_chunks_to_pages(chunks)

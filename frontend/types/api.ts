@@ -183,6 +183,7 @@ export interface ParseCompareRequest {
   configs?: Record<string, any>;
   page_number?: number;
   filename?: string;
+  debug?: boolean;
 }
 
 export interface PageData {

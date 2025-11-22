@@ -4,7 +4,7 @@ import os
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from unstructured_client import UnstructuredClient
 from unstructured_client.models import shared
@@ -62,12 +62,13 @@ class UnstructuredParser(BaseParseAdapter):
         self.vlm_model_provider = vlm_model_provider
         self.client = UnstructuredClient(api_key_auth=api_key)
 
-    async def parse_pdf(self, pdf_path: Path) -> ParseResult:
+    async def parse_pdf(self, pdf_path: Path, debug_info: Optional[Dict[str, Any]] = None) -> ParseResult:
         """
         Parse PDF using Unstructured.io API and map elements to pages.
 
         Args:
             pdf_path: Path to the PDF file
+            debug_info: Optional debug configuration for saving request/response
 
         Returns:
             ParseResult with elements mapped to pages
@@ -98,6 +99,21 @@ class UnstructuredParser(BaseParseAdapter):
 
         req = shared.PartitionParameters(**req_params)
 
+        # Save request parameters if debug mode is enabled
+        if debug_info and debug_info.get("enabled"):
+            request_data = {
+                "provider": "unstructuredio",
+                "pdf_path": str(pdf_path),
+                "config": {
+                    "strategy": self.strategy,
+                    "coordinates": True,
+                    "unique_element_ids": True,
+                    "vlm_model": self.vlm_model if self.strategy == "vlm" else None,
+                    "vlm_model_provider": self.vlm_model_provider if self.strategy == "vlm" else None,
+                },
+            }
+            self._save_debug_file(debug_info, "unstructuredio", request_data, "request")
+
         # Execute partition
         try:
             res = self.client.general.partition(request={"partition_parameters": req})
@@ -106,6 +122,30 @@ class UnstructuredParser(BaseParseAdapter):
 
         # Extract elements from response
         elements = res.elements if hasattr(res, 'elements') else []
+
+        # Save raw response if debug mode is enabled
+        if debug_info and debug_info.get("enabled"):
+            # Convert elements to JSON-serializable format
+            def serialize_element(element):
+                """Helper to serialize element objects"""
+                if hasattr(element, 'model_dump'):
+                    return element.model_dump()
+                elif hasattr(element, 'dict'):
+                    return element.dict()
+                elif isinstance(element, dict):
+                    return element
+                else:
+                    return {
+                        "type": getattr(element, 'type', None),
+                        "text": getattr(element, 'text', None),
+                        "element_id": getattr(element, 'element_id', None),
+                    }
+
+            response_data = {
+                "total_elements": len(elements),
+                "elements": [serialize_element(element) for element in elements],
+            }
+            self._save_debug_file(debug_info, "unstructuredio", response_data, "response")
 
         # Map elements to pages
         pages = self._map_elements_to_pages(elements)

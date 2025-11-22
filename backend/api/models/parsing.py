@@ -115,6 +115,10 @@ class ParseCompareRequest(BaseModel):
         default=None,
         description="Original filename to help audit stored uploads",
     )
+    debug: bool = Field(
+        default=False,
+        description="Enable debug mode to save raw API request/response to disk",
+    )
 
     class Config:
         json_schema_extra = {

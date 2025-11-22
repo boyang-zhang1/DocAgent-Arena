@@ -202,6 +202,7 @@ export default function BattlePage() {
         filename: fileName || undefined,
         configs: selectedConfigs,
         providers: debugMode ? enabledProviders : undefined,
+        debug: debugMode,
       });
 
       if (!data.battle) {

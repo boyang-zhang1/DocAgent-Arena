@@ -4,7 +4,7 @@ import os
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from reducto import Reducto
 
@@ -31,17 +31,48 @@ class ReductoParser(BaseParseAdapter):
         self.api_key = api_key
         self.summarize_figures = summarize_figures
 
-    async def parse_pdf(self, pdf_path: Path) -> ParseResult:
+    async def parse_pdf(self, pdf_path: Path, debug_info: Optional[Dict[str, Any]] = None) -> ParseResult:
         """
         Parse PDF using Reducto and map chunks to pages.
 
         Args:
             pdf_path: Path to the PDF file
+            debug_info: Optional debug configuration for saving request/response
 
         Returns:
             ParseResult with chunks mapped to pages
         """
         start_time = time.time()
+
+        # Save request parameters if debug mode is enabled
+        parse_config = {
+            "enhance": {
+                "agentic": [],
+                "summarize_figures": self.summarize_figures,
+            },
+            "retrieval": {
+                "chunking": {"chunk_mode": "variable"},
+                "embedding_optimized": True,
+                "filter_blocks": [],
+            },
+            "formatting": {
+                "add_page_markers": True,
+                "table_output_format": "dynamic",
+                "merge_tables": False,
+            },
+            "settings": {
+                "ocr_system": "standard",
+                "timeout": 900,
+            },
+        }
+
+        if debug_info and debug_info.get("enabled"):
+            request_data = {
+                "provider": "reducto",
+                "pdf_path": str(pdf_path),
+                "config": parse_config,
+            }
+            self._save_debug_file(debug_info, "reducto", request_data, "request")
 
         # Initialize Reducto client with API key
         # Note: Reducto client may still read from environment variable
@@ -55,25 +86,35 @@ class ReductoParser(BaseParseAdapter):
         # Parse with optimal settings for structured content
         result = client.parse.run(
             input=upload_response,
-            enhance={
-                "agentic": [],
-                "summarize_figures": self.summarize_figures,  # Configurable VLM enhancement
-            },
-            retrieval={
-                "chunking": {"chunk_mode": "variable"},  # Semantic chunking
-                "embedding_optimized": True,
-                "filter_blocks": [],
-            },
-            formatting={
-                "add_page_markers": True,  # Important for page mapping
-                "table_output_format": "dynamic",  # Best table format
-                "merge_tables": False,  # Keep tables separate
-            },
-            settings={
-                "ocr_system": "standard",
-                "timeout": 900,
-            },
+            **parse_config
         )
+
+        # Save raw response if debug mode is enabled
+        if debug_info and debug_info.get("enabled"):
+            # Convert result to JSON-serializable format using Pydantic serialization
+            def serialize_obj(obj):
+                """Helper to serialize Pydantic objects or dicts"""
+                if hasattr(obj, 'model_dump'):
+                    return obj.model_dump()
+                elif hasattr(obj, 'dict'):
+                    return obj.dict()
+                elif isinstance(obj, dict):
+                    return obj
+                else:
+                    return str(obj)
+
+            response_data = {}
+            if hasattr(result, 'result'):
+                result_data = result.result
+                if hasattr(result_data, 'chunks'):
+                    response_data["chunks"] = [serialize_obj(chunk) for chunk in result_data.chunks]
+                elif isinstance(result_data, dict):
+                    response_data = result_data
+
+            if hasattr(result, 'usage'):
+                response_data["usage"] = serialize_obj(result.usage)
+
+            self._save_debug_file(debug_info, "reducto", response_data, "response")
 
         # Debug: Save raw result structure (optional, only if temp dir exists)
         import json

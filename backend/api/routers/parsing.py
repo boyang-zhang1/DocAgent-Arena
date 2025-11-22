@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import random
+import re
 import uuid
 import yaml
 from datetime import datetime
@@ -130,99 +131,125 @@ async def _persist_battle_run(
     parse_results: List[ParseResult],
     configs: Dict[str, Dict[str, Any]],
 ):
-    """Upload battle artifacts and persist run/results asynchronously."""
+    """
+    Upload battle artifacts and persist run/results asynchronously.
 
-    client = prisma_client
-
-    storage_url: Optional[str] = None
-    # Construct Supabase storage path - this is our source of truth
-    supabase_storage_path = f"{BATTLE_STORAGE_PREFIX}/{battle_id}.pdf"
-
+    CRITICAL: This function MUST NOT crash - it runs in background.
+    All errors are logged but swallowed to prevent user-facing failures.
+    """
     try:
-        storage_service = SupabaseStorageService()
-        storage_url = storage_service.upload(str(storage_input_path), supabase_storage_path)
-        logger.info("Uploaded battle PDF to Supabase: %s (path: %s)", storage_url, supabase_storage_path)
+        client = prisma_client
+
+        storage_url: Optional[str] = None
+        # Construct Supabase storage path - this is our source of truth
+        supabase_storage_path = f"{BATTLE_STORAGE_PREFIX}/{battle_id}.pdf"
+
+        try:
+            storage_service = SupabaseStorageService()
+            storage_url = storage_service.upload(str(storage_input_path), supabase_storage_path)
+            logger.info("Uploaded battle PDF to Supabase: %s (path: %s)", storage_url, supabase_storage_path)
+        except Exception as exc:
+            logger.error("Failed to upload battle PDF to Supabase: %s. Continuing without storage URL.", exc)
+            # Don't raise - continue with database persistence even if storage fails
+            storage_url = None
+
+        try:
+            pricing_config = load_pricing_config()
+        except Exception as exc:
+            logger.debug("Pricing config unavailable for battle persistence: %s", exc)
+            pricing_config = None
+
+        provider_entries = []
+        has_success = False
+
+        for result in parse_results:
+            usage = result.usage or {}
+            cost_credits = None
+            cost_usd = None
+
+            if pricing_config:
+                try:
+                    provider_cost = calculate_provider_cost(result.provider, usage, pricing_config)
+                    cost_credits = provider_cost.credits
+                    cost_usd = provider_cost.total_usd
+                except Exception as exc:
+                    logger.debug("Cost calculation failed for %s: %s", result.provider, exc)
+
+            pages_payload = [
+                {
+                    "page_number": page.page_number,
+                    "markdown": _sanitize_unicode(page.markdown),
+                    "images": [_sanitize_unicode(img) if isinstance(img, str) else img for img in page.images],
+                    "metadata": _jsonify(page.metadata),
+                }
+                for page in result.pages
+            ]
+            if pages_payload:
+                has_success = True
+
+            # Get model config for this provider from configs dict
+            # Note: We're not storing this in DB anymore, just in metadata
+
+            provider_entries.append(
+                {
+                    "provider": result.provider,
+                    "label": provider_to_label.get(result.provider, result.provider),
+                    "content": Json({"pages": pages_payload}),
+                    "totalPages": result.total_pages,
+                    "usage": Json(_jsonify(usage)),
+                    "costCredits": cost_credits,
+                    "costUsd": cost_usd,
+                    "processingTime": result.processing_time,
+                }
+            )
+
+        status = "SUCCESS" if has_success else "ERROR"
+
+        metadata = _jsonify({
+            "configs": configs,
+            "provider_labels": provider_to_label,
+            "label_providers": {assignment.label: assignment.provider for assignment in assignments},
+            "assignments": [assignment.model_dump() for assignment in assignments],
+            "battle_mode": True,
+        })
+
+        try:
+            await client.parsebattlerun.create(
+                data={
+                    "id": battle_id,
+                    "uploadFileId": upload_file_id,
+                    "originalName": _sanitize_unicode(original_name),
+                    "storagePath": supabase_storage_path,
+                    "storageUrl": storage_url,
+                    "pageNumber": page_number,
+                    "providers": providers,
+                    "status": status,
+                    "metadata": Json(metadata),
+                    "providerResults": {"create": provider_entries},
+                }
+            )
+            logger.info("Successfully persisted battle run %s", battle_id)
+        except Exception as exc:
+            # Log detailed error but don't crash - persistence is non-critical for user experience
+            logger.error(
+                "Failed to persist battle run %s: %s. "
+                "This is a non-critical error - results were still returned to user. "
+                "Check for Unicode issues (null bytes) or database connection problems.",
+                battle_id,
+                exc,
+                exc_info=True  # Include full stack trace in logs
+            )
     except Exception as exc:
-        logger.error("Failed to upload battle PDF to Supabase: %s", exc)
-        raise RuntimeError(f"Battle PDF upload to storage failed: {exc}")
-
-    try:
-        pricing_config = load_pricing_config()
-    except Exception as exc:
-        logger.debug("Pricing config unavailable for battle persistence: %s", exc)
-        pricing_config = None
-
-    provider_entries = []
-    has_success = False
-
-    for result in parse_results:
-        usage = result.usage or {}
-        cost_credits = None
-        cost_usd = None
-
-        if pricing_config:
-            try:
-                provider_cost = calculate_provider_cost(result.provider, usage, pricing_config)
-                cost_credits = provider_cost.credits
-                cost_usd = provider_cost.total_usd
-            except Exception as exc:
-                logger.debug("Cost calculation failed for %s: %s", result.provider, exc)
-
-        pages_payload = [
-            {
-                "page_number": page.page_number,
-                "markdown": page.markdown,
-                "images": page.images,
-                "metadata": _jsonify(page.metadata),
-            }
-            for page in result.pages
-        ]
-        if pages_payload:
-            has_success = True
-
-        # Get model config for this provider from configs dict
-        # Note: We're not storing this in DB anymore, just in metadata
-
-        provider_entries.append(
-            {
-                "provider": result.provider,
-                "label": provider_to_label.get(result.provider, result.provider),
-                "content": Json({"pages": pages_payload}),
-                "totalPages": result.total_pages,
-                "usage": Json(_jsonify(usage)),
-                "costCredits": cost_credits,
-                "costUsd": cost_usd,
-                "processingTime": result.processing_time,
-            }
+        # FINAL SAFETY NET: Catch ANY error in the entire persistence flow
+        # This includes data sanitization errors, JSON serialization errors, etc.
+        logger.critical(
+            "CRITICAL: Unexpected error in _persist_battle_run for %s: %s. "
+            "This should never happen. Check the entire persistence pipeline.",
+            battle_id,
+            exc,
+            exc_info=True
         )
-
-    status = "SUCCESS" if has_success else "ERROR"
-
-    metadata = _jsonify({
-        "configs": configs,
-        "provider_labels": provider_to_label,
-        "label_providers": {assignment.label: assignment.provider for assignment in assignments},
-        "assignments": [assignment.model_dump() for assignment in assignments],
-        "battle_mode": True,
-    })
-
-    try:
-        await client.parsebattlerun.create(
-            data={
-                "id": battle_id,
-                "uploadFileId": upload_file_id,
-                "originalName": original_name,
-                "storagePath": supabase_storage_path,
-                "storageUrl": storage_url,
-                "pageNumber": page_number,
-                "providers": providers,
-                "status": status,
-                "metadata": Json(metadata),
-                "providerResults": {"create": provider_entries},
-            }
-        )
-    except Exception as exc:
-        logger.error("Failed to persist battle run %s: %s", battle_id, exc)
+        # Swallow the error - user already has their results
 
 
 def _normalize_preferred_labels(
@@ -623,6 +650,27 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    # Setup debug mode if enabled
+    debug_info = None
+    if request.debug:
+        print(f"[DEBUG MODE] Enabled for file: {request.filename or request.file_id}")
+        debug_dir = TEMP_DIR / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+
+        # Prepare debug info for parsers
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_filename = request.filename or request.file_id
+        # Remove .pdf extension if present
+        if base_filename.endswith(".pdf"):
+            base_filename = base_filename[:-4]
+
+        debug_info = {
+            "enabled": True,
+            "debug_dir": debug_dir,
+            "base_filename": base_filename,
+            "timestamp": timestamp,
+        }
+
     try:
         pricing_config = load_pricing_config()
     except ValueError as exc:
@@ -755,7 +803,7 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
     if not parsers:
         raise HTTPException(status_code=400, detail="No valid providers available for parsing.")
 
-    parse_tasks = [parser.parse_pdf(selected_pdf_path) for parser in parsers.values()]
+    parse_tasks = [parser.parse_pdf(selected_pdf_path, debug_info=debug_info) for parser in parsers.values()]
 
     try:
         parse_results = await asyncio.gather(*parse_tasks)
@@ -863,7 +911,7 @@ async def submit_battle_feedback(request: BattleFeedbackRequest, db: Prisma = De
 
     feedback_data = {
         "preferredLabels": preferred_labels,
-        "comment": request.comment,
+        "comment": _sanitize_unicode(request.comment) if request.comment else None,
         "revealedAt": datetime.utcnow(),
     }
 
@@ -1041,21 +1089,65 @@ async def calculate_cost(request: ParseCompareResponse):
         costs=costs,
         total_usd=total_usd,
     )
+def _sanitize_unicode(text: str) -> str:
+    """
+    AGGRESSIVELY remove ALL problematic characters that could cause PostgreSQL errors.
+
+    Strategy: Only keep safe characters, remove EVERYTHING else.
+    - Keep: printable ASCII (32-126), newlines, tabs, spaces
+    - Keep: Basic Latin extended characters (128-255)
+    - REMOVE: Everything else including null bytes, control chars, exotic Unicode
+
+    Better to lose some formatting than crash the database!
+
+    Args:
+        text: Input string potentially containing problematic characters
+
+    Returns:
+        Sanitized string guaranteed safe for PostgreSQL storage
+    """
+    if not isinstance(text, str):
+        return text
+
+    if not text:
+        return text
+
+    # Step 1: Remove null bytes immediately (most common crash cause)
+    text = text.replace('\x00', '')
+    text = text.replace('\u0000', '')
+
+    # Step 2: AGGRESSIVE - only keep safe characters
+    # Keep: space (32), printable ASCII (33-126), newline (10), carriage return (13), tab (9)
+    # Keep: Extended ASCII for common symbols (128-255)
+    # REMOVE: Everything else
+    safe_chars = []
+    for char in text:
+        code = ord(char)
+        # Keep safe printable characters and basic whitespace
+        if (32 <= code <= 126) or code in (9, 10, 13) or (128 <= code <= 255):
+            safe_chars.append(char)
+        # Everything else is DROPPED
+
+    return ''.join(safe_chars)
+
+
 def _jsonify(value: Any) -> Any:
-    """Convert arbitrary objects to JSON-serializable structures."""
+    """Convert arbitrary objects to JSON-serializable structures and sanitize for PostgreSQL."""
     if value is None:
         return None
-    if isinstance(value, (str, int, float, bool)):
+    if isinstance(value, str):
+        return _sanitize_unicode(value)
+    if isinstance(value, (int, float, bool)):
         return value
     if isinstance(value, Path):
-        return str(value)
+        return _sanitize_unicode(str(value))
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, dict):
-        return {k: _jsonify(v) for k, v in value.items()}
+        return {_sanitize_unicode(k) if isinstance(k, str) else k: _jsonify(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_jsonify(v) for v in value]
-    return str(value)
+    return _sanitize_unicode(str(value))
 
 
 

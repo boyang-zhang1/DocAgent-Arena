@@ -1,9 +1,10 @@
 """Base adapter interface for PDF parsing."""
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -32,14 +33,42 @@ class BaseParseAdapter(ABC):
     """Abstract base class for PDF parsing adapters."""
 
     @abstractmethod
-    async def parse_pdf(self, pdf_path: Path) -> ParseResult:
+    async def parse_pdf(self, pdf_path: Path, debug_info: Optional[Dict[str, Any]] = None) -> ParseResult:
         """
         Parse a PDF file and return structured results.
 
         Args:
             pdf_path: Path to the PDF file
+            debug_info: Optional debug configuration containing:
+                - enabled: Whether debug mode is active
+                - debug_dir: Directory to save debug files
+                - base_filename: Base filename for debug files
+                - timestamp: Timestamp string for debug files
 
         Returns:
             ParseResult containing page-by-page markdown and metadata
         """
         pass
+
+    def _save_debug_file(self, debug_info: Dict[str, Any], provider: str, data: Dict[str, Any], suffix: str) -> None:
+        """
+        Save debug data to a JSON file.
+
+        Args:
+            debug_info: Debug configuration from endpoint
+            provider: Provider name (e.g., 'llamaindex', 'reducto')
+            data: Data to save as JSON
+            suffix: File suffix (e.g., 'request', 'response')
+        """
+        if not debug_info or not debug_info.get("enabled"):
+            return
+
+        debug_dir = debug_info["debug_dir"]
+        base_filename = debug_info["base_filename"]
+        timestamp = debug_info["timestamp"]
+
+        filename = f"{base_filename}_{provider}_{timestamp}_{suffix}.json"
+        filepath = debug_dir / filename
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
