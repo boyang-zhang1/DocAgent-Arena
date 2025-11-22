@@ -72,3 +72,25 @@ class BaseParseAdapter(ABC):
 
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+
+
+def serialize_obj(obj):
+    """
+    Helper to serialize Pydantic objects, dicts, and lists to JSON-serializable format.
+
+    Args:
+        obj: Object to serialize (Pydantic model, dict, list, or primitive)
+
+    Returns:
+        JSON-serializable version of the object
+    """
+    if hasattr(obj, 'model_dump'):
+        return obj.model_dump()
+    elif hasattr(obj, 'dict'):
+        return obj.dict()
+    elif isinstance(obj, dict):
+        return {k: serialize_obj(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_obj(item) for item in obj]
+    else:
+        return obj

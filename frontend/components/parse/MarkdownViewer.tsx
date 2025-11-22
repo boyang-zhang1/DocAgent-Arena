@@ -283,6 +283,20 @@ export function MarkdownViewer({
         </code>
       );
     },
+    // Custom img handler to prevent empty src warnings
+    img: ({ src, alt, ...props }) => {
+      // Don't render if src is empty or undefined
+      if (!src) return null;
+
+      return (
+        <img
+          src={src}
+          alt={alt || ''}
+          className="max-w-full h-auto"
+          {...props}
+        />
+      );
+    },
   };
 
   return (
@@ -317,14 +331,28 @@ export function MarkdownViewer({
                 </ReactMarkdown>
               )}
             </div>
+
+            {/* Structured Response - Always visible */}
             <details className="mt-4 rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 text-sm text-gray-600 dark:text-gray-300">
               <summary className="cursor-pointer font-medium">
-                Original Structured Response
+                Structured Response (MarkDown/HTML)
               </summary>
               <pre className="mt-3 whitespace-pre-wrap break-words text-xs text-gray-800 dark:text-gray-100 bg-transparent">
-                {metadata?.raw_response || markdown}
+                {markdown}
               </pre>
             </details>
+
+            {/* Original Response - Only visible when raw_response exists */}
+            {metadata?.raw_response && (
+              <details className="mt-4 rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 text-sm text-gray-600 dark:text-gray-300">
+                <summary className="cursor-pointer font-medium">
+                  Original Response
+                </summary>
+                <pre className="mt-3 whitespace-pre-wrap break-words text-xs text-gray-800 dark:text-gray-100 bg-transparent font-mono">
+                  {metadata.raw_response}
+                </pre>
+              </details>
+            )}
           </div>
         ) : (
           <div className="text-center text-gray-400 p-4 italic">

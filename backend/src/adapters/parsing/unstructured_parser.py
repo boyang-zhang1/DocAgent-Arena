@@ -269,16 +269,18 @@ class UnstructuredParser(BaseParseAdapter):
             # Formatted markdown for rendering
             markdown = "\n\n".join(page_elements) if page_elements else "*No content on this page*"
 
-            # Raw structured response for debugging
-            import json
-            if raw_elements:
-                raw_response = "\n\n".join([json.dumps(elem, indent=2) for elem in raw_elements])
-            else:
-                raw_response = "*No elements on this page*"
-
             # Get metadata for this page
             page_meta = page_metadata_map.get(page_num, {})
             element_types = dict(page_meta.get("element_types", {}))
+
+            # Prepare raw response data for this page (consistent format with other providers)
+            import json
+            raw_page_data = {
+                "page_number": page_num,
+                "elements": raw_elements,
+                "element_types": element_types,
+                "has_tables": page_meta.get("has_tables", False),
+            }
 
             pages.append(
                 PageResult(
@@ -289,7 +291,7 @@ class UnstructuredParser(BaseParseAdapter):
                         "element_count": len(page_elements),
                         "element_types": element_types,
                         "has_tables": page_meta.get("has_tables", False),
-                        "raw_response": raw_response,  # RAW for "Original Structured Response" section
+                        "raw_response": json.dumps(raw_page_data, indent=2),  # RAW for "Original Response" section
                     },
                 )
             )

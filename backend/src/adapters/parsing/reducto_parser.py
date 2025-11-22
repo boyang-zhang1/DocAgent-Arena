@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 
 from reducto import Reducto
 
-from .base import BaseParseAdapter, PageResult, ParseResult
+from .base import BaseParseAdapter, PageResult, ParseResult, serialize_obj
 
 
 class ReductoParser(BaseParseAdapter):
@@ -196,6 +196,7 @@ class ReductoParser(BaseParseAdapter):
         """
         page_map: Dict[int, List[str]] = defaultdict(list)
         page_images: Dict[int, List[str]] = defaultdict(list)
+        page_raw_blocks: Dict[int, List[Dict[str, Any]]] = defaultdict(list)
         max_page = 0
 
         for chunk in chunks:
@@ -257,6 +258,8 @@ class ReductoParser(BaseParseAdapter):
                 if page_num > 0:  # Ignore negative page numbers
                     page_map[page_num].append(formatted)
                     max_page = max(max_page, page_num)
+                    # Store raw block data for this page
+                    page_raw_blocks[page_num].append(block_dict)
 
                 # Extract image URLs if available
                 if block_type == "Image":
@@ -272,10 +275,20 @@ class ReductoParser(BaseParseAdapter):
             max_page = max(max_page, 1)
 
         # Convert to PageResult objects
+        import json
+
         pages = []
         for page_num in range(1, max_page + 1):
             page_blocks = page_map.get(page_num, [])
             markdown = "".join(page_blocks) if page_blocks else "*No content on this page*"
+
+            # Prepare raw response data for this page (serialize Pydantic objects)
+            raw_blocks_serialized = [serialize_obj(block) for block in page_raw_blocks.get(page_num, [])]
+            raw_page_data = {
+                "page_number": page_num,
+                "blocks": raw_blocks_serialized,
+                "images": page_images.get(page_num, []),
+            }
 
             pages.append(
                 PageResult(
@@ -285,6 +298,7 @@ class ReductoParser(BaseParseAdapter):
                     metadata={
                         "block_count": len(page_blocks),
                         "has_images": len(page_images.get(page_num, [])) > 0,
+                        "raw_response": json.dumps(raw_page_data, indent=2),
                     },
                 )
             )

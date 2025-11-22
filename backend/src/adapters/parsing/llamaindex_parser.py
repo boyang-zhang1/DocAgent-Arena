@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional
 
 from llama_parse import LlamaParse
 
-from .base import BaseParseAdapter, PageResult, ParseResult
+from .base import BaseParseAdapter, PageResult, ParseResult, serialize_obj
 
 
 class LlamaIndexParser(BaseParseAdapter):
@@ -145,6 +145,22 @@ class LlamaIndexParser(BaseParseAdapter):
                     else:
                         image_refs.append(str(img))
 
+            # Capture raw page response for frontend display (serialize Pydantic objects)
+            raw_page_data = {
+                "page_number": i,
+                "markdown": page.md,
+                "text": page.text,
+                "layout": serialize_obj(page.layout) if page.layout else None,
+                "structured_data": serialize_obj(page.structuredData) if page.structuredData else None,
+                "images": [
+                    {
+                        "name": getattr(img, 'name', None),
+                        "url": getattr(img, 'url', None),
+                    } if hasattr(img, 'name') or hasattr(img, 'url') else str(img)
+                    for img in (page.images or [])
+                ],
+            }
+
             pages.append(
                 PageResult(
                     page_number=i,
@@ -154,6 +170,7 @@ class LlamaIndexParser(BaseParseAdapter):
                         "layout": page.layout or {},
                         "text_length": len(page.text or ""),
                         "structured_data": page.structuredData or {},
+                        "raw_response": json.dumps(raw_page_data, indent=2),
                     },
                 )
             )

@@ -9,7 +9,7 @@ from collections import defaultdict
 
 from landingai_ade import LandingAIADE
 
-from .base import BaseParseAdapter, PageResult, ParseResult
+from .base import BaseParseAdapter, PageResult, ParseResult, serialize_obj
 
 
 class LandingAIParser(BaseParseAdapter):
@@ -268,6 +268,16 @@ class LandingAIParser(BaseParseAdapter):
                     "grounding": chunk.get("grounding"),
                 })
 
+            # Prepare raw response data for this page
+            import json
+
+            # Serialize chunks for JSON output
+            chunks_serialized = [serialize_obj(chunk) for chunk in chunks_on_page]
+            raw_page_data = {
+                "page_number": page_num,
+                "chunks": chunks_serialized,  # Full chunk data including markdown
+            }
+
             pages.append(
                 PageResult(
                     page_number=page_num,
@@ -276,6 +286,7 @@ class LandingAIParser(BaseParseAdapter):
                     metadata={
                         "chunks": chunk_metadata,
                         "chunk_count": len(chunks_on_page),
+                        "raw_response": json.dumps(raw_page_data, indent=2),
                     },
                 )
             )

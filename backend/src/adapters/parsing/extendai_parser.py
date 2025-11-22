@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 from extend_ai import Extend
 from extend_ai.core.request_options import RequestOptions
 
-from .base import BaseParseAdapter, PageResult, ParseResult
+from .base import BaseParseAdapter, PageResult, ParseResult, serialize_obj
 
 
 class ExtendAIParser(BaseParseAdapter):
@@ -178,6 +178,7 @@ class ExtendAIParser(BaseParseAdapter):
         """
         page_map: Dict[int, List[str]] = {}
         page_images: Dict[int, List[str]] = {}
+        page_raw_chunks: Dict[int, List[Dict[str, Any]]] = {}
         max_page = 0
 
         for chunk in chunks:
@@ -212,6 +213,11 @@ class ExtendAIParser(BaseParseAdapter):
                 if page_num not in page_map:
                     page_map[page_num] = []
                 page_map[page_num].append(content)
+
+                # Store raw chunk data for this page
+                if page_num not in page_raw_chunks:
+                    page_raw_chunks[page_num] = []
+                page_raw_chunks[page_num].append(chunk_dict)
 
             # Extract blocks for images and additional metadata
             blocks = chunk_dict.get("blocks", [])
@@ -257,12 +263,22 @@ class ExtendAIParser(BaseParseAdapter):
             max_page = max(max_page, 1)
 
         # Convert to PageResult objects
+        import json
+
         pages = []
         for page_num in range(1, max_page + 1):
             page_contents = page_map.get(page_num, [])
 
             # Join content with double newlines
             markdown = "\n\n".join(page_contents) if page_contents else "*No content on this page*"
+
+            # Prepare raw response data for this page (serialize Pydantic objects)
+            raw_chunks_serialized = [serialize_obj(chunk) for chunk in page_raw_chunks.get(page_num, [])]
+            raw_page_data = {
+                "page_number": page_num,
+                "chunks": raw_chunks_serialized,
+                "images": page_images.get(page_num, []),
+            }
 
             pages.append(
                 PageResult(
@@ -272,6 +288,7 @@ class ExtendAIParser(BaseParseAdapter):
                     metadata={
                         "chunk_count": len(page_contents),
                         "has_images": len(page_images.get(page_num, [])) > 0,
+                        "raw_response": json.dumps(raw_page_data, indent=2),
                     },
                 )
             )
