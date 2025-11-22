@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { LlamaIndexConfig, ReductoConfig, LandingAIConfig } from "@/types/api";
+import { LlamaIndexConfig, ReductoConfig, LandingAIConfig, ExtendAIConfig } from "@/types/api";
 import {
   ProviderPricingMap,
   llamaIndexConfigToValue,
   reductoConfigToValue,
   landingaiConfigToValue,
+  extendaiConfigToValue,
   getModelOptionForConfig,
   formatOptionDescription,
   getFallbackLabel,
@@ -29,11 +30,13 @@ interface ModelSelectionCardProps {
     llamaindex: LlamaIndexConfig;
     reducto: ReductoConfig;
     landingai: LandingAIConfig;
+    extendai: ExtendAIConfig;
   };
   onConfigChange?: (configs: {
     llamaindex: LlamaIndexConfig;
     reducto: ReductoConfig;
     landingai: LandingAIConfig;
+    extendai: ExtendAIConfig;
   }) => void;
   readOnly?: boolean;
   pricing?: ProviderPricingMap | null;
@@ -100,6 +103,16 @@ export function ModelSelectionCard({
     });
   };
 
+  const handleExtendAIChange = (value: string) => {
+    if (readOnly || !onConfigChange) return;
+    const option = pricing?.extendai?.models.find((model) => model.value === value);
+    if (!option) return;
+    onConfigChange({
+      ...selectedConfigs,
+      extendai: option.config as ExtendAIConfig,
+    });
+  };
+
   if (!pricing) {
     return (
       <div className="rounded-xl border border-purple-200 bg-purple-50/70 dark:border-purple-900/50 dark:bg-purple-950/30 px-4 pt-2 pb-4">
@@ -118,6 +131,7 @@ export function ModelSelectionCard({
   const llamaOptions = pricing.llamaindex?.models ?? [];
   const reductoOptions = pricing.reducto?.models ?? [];
   const landingaiOptions = pricing.landingai?.models ?? [];
+  const extendaiOptions = pricing.extendai?.models ?? [];
 
   const llamaSelection = getModelOptionForConfig(
     "llamaindex",
@@ -132,6 +146,11 @@ export function ModelSelectionCard({
   const landingaiSelection = getModelOptionForConfig(
     "landingai",
     selectedConfigs.landingai,
+    pricing
+  );
+  const extendaiSelection = getModelOptionForConfig(
+    "extendai",
+    selectedConfigs.extendai,
     pricing
   );
 
@@ -178,7 +197,7 @@ export function ModelSelectionCard({
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-4 gap-6">
         {/* LlamaIndex Column */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 mb-2">
@@ -257,6 +276,35 @@ export function ModelSelectionCard({
               </SelectTrigger>
               <SelectContent>
                 {landingaiOptions.map((model) => (
+                  <SelectItem key={model.value} value={model.value}>
+                    {formatOptionDescription(model)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        {/* ExtendAI Column */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <ProviderLabel provider="extendai" size={20} className="gap-2" nameClassName="text-sm font-medium" />
+          </div>
+          {readOnly ? (
+            <div className="text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-950 rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2">
+              {extendaiSelection?.label || getFallbackLabel("extendai")}
+            </div>
+          ) : (
+            <Select
+              value={extendaiConfigToValue(selectedConfigs.extendai)}
+              onValueChange={handleExtendAIChange}
+              disabled={!extendaiOptions.length}
+            >
+              <SelectTrigger id="extendai-mode" className="bg-white dark:bg-gray-950">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {extendaiOptions.map((model) => (
                   <SelectItem key={model.value} value={model.value}>
                     {formatOptionDescription(model)}
                   </SelectItem>

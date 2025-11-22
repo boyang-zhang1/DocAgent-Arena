@@ -15,12 +15,14 @@ export const STANDARD_PRESET = {
   llamaindex: "agentic",
   reducto: "standard",
   landingai: "dpt-2-mini",
+  extendai: "standard",
 } as const;
 
 export const ADVANCE_PRESET = {
   llamaindex: "agentic-plus",
   reducto: "complex",
   landingai: "dpt-2",
+  extendai: "agentic-ocr",
 } as const;
 
 export type PresetMode = "standard" | "advance" | "custom";
@@ -40,6 +42,10 @@ export function getDefaultBattleConfigs() {
       mode: "dpt-2-mini",
       model: "dpt-2-mini",
     } as LandingAIConfig,
+    extendai: {
+      mode: "standard",
+      parse_mode: "standard",
+    } as ExtendAIConfig,
   };
 }
 
@@ -124,16 +130,19 @@ export function detectPresetFromConfigs(configs: {
   llamaindex: LlamaIndexConfig;
   reducto: ReductoConfig;
   landingai: LandingAIConfig;
+  extendai: ExtendAIConfig;
 }): PresetMode {
   const llamaMode = configs.llamaindex?.mode || "";
   const reductoMode = configs.reducto?.mode || "";
   const landingaiMode = configs.landingai?.mode || "";
+  const extendaiMode = configs.extendai?.mode || "";
 
   // Check if matches standard preset
   if (
     llamaMode === STANDARD_PRESET.llamaindex &&
     reductoMode === STANDARD_PRESET.reducto &&
-    landingaiMode === STANDARD_PRESET.landingai
+    landingaiMode === STANDARD_PRESET.landingai &&
+    extendaiMode === STANDARD_PRESET.extendai
   ) {
     return "standard";
   }
@@ -142,7 +151,8 @@ export function detectPresetFromConfigs(configs: {
   if (
     llamaMode === ADVANCE_PRESET.llamaindex &&
     reductoMode === ADVANCE_PRESET.reducto &&
-    landingaiMode === ADVANCE_PRESET.landingai
+    landingaiMode === ADVANCE_PRESET.landingai &&
+    extendaiMode === ADVANCE_PRESET.extendai
   ) {
     return "advance";
   }
@@ -161,6 +171,7 @@ export function getConfigsForPreset(
   llamaindex: LlamaIndexConfig;
   reducto: ReductoConfig;
   landingai: LandingAIConfig;
+  extendai: ExtendAIConfig;
 } | null {
   if (!pricing) return null;
 
@@ -176,8 +187,11 @@ export function getConfigsForPreset(
   const landingaiOption = pricing.landingai?.models.find(
     (m) => m.value === presetModes.landingai
   );
+  const extendaiOption = pricing.extendai?.models.find(
+    (m) => m.value === presetModes.extendai
+  );
 
-  if (!llamaOption || !reductoOption || !landingaiOption) {
+  if (!llamaOption || !reductoOption || !landingaiOption || !extendaiOption) {
     return null;
   }
 
@@ -185,5 +199,6 @@ export function getConfigsForPreset(
     llamaindex: llamaOption.config as LlamaIndexConfig,
     reducto: reductoOption.config as ReductoConfig,
     landingai: landingaiOption.config as LandingAIConfig,
+    extendai: extendaiOption.config as ExtendAIConfig,
   };
 }

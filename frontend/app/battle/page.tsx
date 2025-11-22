@@ -20,6 +20,7 @@ import {
   type LlamaIndexConfig,
   type ReductoConfig,
   type LandingAIConfig,
+  type ExtendAIConfig,
 } from "@/types/api";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
@@ -37,6 +38,7 @@ type BattleConfigSelection = {
   llamaindex: LlamaIndexConfig;
   reducto: ReductoConfig;
   landingai: LandingAIConfig;
+  extendai: ExtendAIConfig;
 };
 
 export default function BattlePage() {
@@ -85,6 +87,8 @@ export default function BattlePage() {
         ? configsForDisplay.reducto
         : provider === "landingai"
         ? configsForDisplay.landingai
+        : provider === "extendai"
+        ? configsForDisplay.extendai
         : undefined;
 
     if (!config) {
@@ -182,6 +186,7 @@ export default function BattlePage() {
         llamaindex: { ...selectedConfigs.llamaindex },
         reducto: { ...selectedConfigs.reducto },
         landingai: { ...selectedConfigs.landingai },
+        extendai: { ...selectedConfigs.extendai },
       });
       setPreferredLabels(null);
       setFeedbackChoice(null);
@@ -463,6 +468,7 @@ export default function BattlePage() {
                       markdown={markdown}
                       cardClassName={cardClass}
                       footer={footer}
+                      provider={provider}
                     />
                   );
                 })}

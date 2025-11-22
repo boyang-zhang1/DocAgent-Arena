@@ -55,6 +55,113 @@ function MermaidRenderer({ code }: { code: string }) {
   return <div dangerouslySetInnerHTML={{ __html: svg }} />;
 }
 
+// Component to render ExtendAI figure blocks with proper markdown processing
+function ExtendAIFigureBlock({ content, caption, type }: { content: string; caption?: string; type?: string }) {
+  const figureLabel = type ? `Figure: ${type}` : 'Figure';
+
+  return (
+    <div className="my-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/20 p-4">
+      <div className="text-xs text-blue-600 dark:text-blue-400 font-medium mb-2 tracking-wide">
+        {figureLabel}
+      </div>
+      <div className="prose dark:prose-invert max-w-none prose-sm">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {content}
+        </ReactMarkdown>
+      </div>
+      {caption && (
+        <div className="mt-3 pt-3 border-t border-blue-200 dark:border-blue-700">
+          <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Caption: </span>
+          <span className="text-sm text-gray-600 dark:text-gray-300 prose dark:prose-invert prose-sm inline">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                p: ({ children }) => <span>{children}</span>,
+              }}
+            >
+              {caption}
+            </ReactMarkdown>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Component to render ExtendAI markdown with figure blocks
+function ExtendAIMarkdownRenderer({ markdown, components }: { markdown: string; components: Components }) {
+  const figureRegex = /<figure([^>]*)>([\s\S]*?)<\/figure>/g;
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+
+  while ((match = figureRegex.exec(markdown)) !== null) {
+    // Add content before figure as regular markdown
+    if (match.index > lastIndex) {
+      const beforeText = markdown.substring(lastIndex, match.index);
+      if (beforeText.trim()) {
+        parts.push(
+          <ReactMarkdown
+            key={`md-${key}`}
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex, rehypeRaw]}
+            components={components}
+          >
+            {beforeText}
+          </ReactMarkdown>
+        );
+        key++;
+      }
+    }
+
+    // Parse figure attributes and content
+    const attrs = match[1];
+    const figureContent = match[2];
+
+    // Extract type from attributes
+    const typeMatch = /type="([^"]*)"/.exec(attrs);
+    const figureType = typeMatch?.[1];
+
+    // Extract caption
+    const captionMatch = /<caption>([\s\S]*?)<\/caption>/.exec(figureContent);
+    const caption = captionMatch?.[1]?.trim();
+
+    // Get content without caption
+    const contentWithoutCaption = figureContent.replace(/<caption>[\s\S]*?<\/caption>/g, '').trim();
+
+    parts.push(
+      <ExtendAIFigureBlock
+        key={`fig-${key}`}
+        content={contentWithoutCaption}
+        caption={caption}
+        type={figureType}
+      />
+    );
+    key++;
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining content after last figure
+  if (lastIndex < markdown.length) {
+    const afterText = markdown.substring(lastIndex);
+    if (afterText.trim()) {
+      parts.push(
+        <ReactMarkdown
+          key={`md-${key}`}
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[rehypeKatex, rehypeRaw]}
+          components={components}
+        >
+          {afterText}
+        </ReactMarkdown>
+      );
+    }
+  }
+
+  return <>{parts}</>;
+}
+
 interface MarkdownViewerProps {
   title: ReactNode;
   markdown: string | undefined;
@@ -63,6 +170,7 @@ interface MarkdownViewerProps {
   subtitle?: ReactNode;
   footer?: ReactNode;
   cardClassName?: string;
+  provider?: string;
 }
 
 export function MarkdownViewer({
@@ -73,6 +181,7 @@ export function MarkdownViewer({
   subtitle,
   footer,
   cardClassName,
+  provider,
 }: MarkdownViewerProps) {
   // Preprocess markdown to normalize LaTeX syntax
   // Convert \( ... \) to $ ... $ and \[ ... \] to $$ ... $$
@@ -188,13 +297,20 @@ export function MarkdownViewer({
         ) : markdown ? (
           <div className="flex-1 flex flex-col">
             <div className="prose dark:prose-invert max-w-none prose-lg prose-headings:font-bold prose-h1:text-3xl prose-h2:text-2xl prose-h3:text-xl text-[17px] leading-relaxed">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkMath]}
-                rehypePlugins={[rehypeKatex, rehypeRaw]}
-                components={markdownComponents}
-              >
-                {processedMarkdown}
-              </ReactMarkdown>
+              {provider === 'extendai' && processedMarkdown ? (
+                <ExtendAIMarkdownRenderer
+                  markdown={processedMarkdown}
+                  components={markdownComponents}
+                />
+              ) : (
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm, remarkMath]}
+                  rehypePlugins={[rehypeKatex, rehypeRaw]}
+                  components={markdownComponents}
+                >
+                  {processedMarkdown}
+                </ReactMarkdown>
+              )}
             </div>
             <details className="mt-4 rounded-md border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/30 p-4 text-sm text-gray-600 dark:text-gray-300">
               <summary className="cursor-pointer font-medium">
