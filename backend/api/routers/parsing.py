@@ -43,6 +43,7 @@ from src.adapters.parsing.llamaindex_parser import LlamaIndexParser
 from src.adapters.parsing.reducto_parser import ReductoParser
 from src.adapters.parsing.landingai_parser import LandingAIParser
 from src.adapters.parsing.unstructured_parser import UnstructuredParser
+from src.adapters.parsing.extendai_parser import ExtendAIParser
 from src.adapters.parsing.base import ParseResult
 
 logger = logging.getLogger(__name__)
@@ -53,12 +54,13 @@ router = APIRouter(prefix="/parse", tags=["parsing"])
 TEMP_DIR = Path("data/temp")
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-ALL_PARSING_PROVIDERS = ["llamaindex", "reducto", "landingai", "unstructuredio"]
+ALL_PARSING_PROVIDERS = ["llamaindex", "reducto", "landingai", "unstructuredio", "extendai"]
 DEFAULT_PROVIDER_CONFIGS: Dict[str, Dict[str, Any]] = {
     "llamaindex": {"mode": "agentic"},
     "reducto": {"mode": "standard"},
     "landingai": {"mode": "dpt-2"},
     "unstructuredio": {"mode": "fast"},
+    "extendai": {"mode": "standard"},
 }
 BATTLE_LABELS = ["A", "B", "C", "D"]
 BATTLE_STORAGE_PREFIX = "user-upload"
@@ -693,6 +695,24 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
             parsers["unstructuredio"] = UnstructuredParser(
                 api_key=api_key,
                 strategy=strategy
+            )
+
+        if "extendai" in providers:
+            config = resolved_configs.get("extendai")
+            if not config:
+                config = _resolve_provider_config("extendai", DEFAULT_PROVIDER_CONFIGS.get("extendai"), pricing_config)
+            agentic_ocr = config.get("agentic_ocr", False)
+            if "mode" in config:
+                agentic_ocr = config["mode"] == "agentic-ocr"
+
+            # Get API key from environment
+            api_key = os.getenv("EXTENDAI_API_KEY")
+            if not api_key:
+                raise ValueError("EXTENDAI_API_KEY not configured in backend environment")
+
+            parsers["extendai"] = ExtendAIParser(
+                api_key=api_key,
+                agentic_ocr=agentic_ocr
             )
 
     except ValueError as e:

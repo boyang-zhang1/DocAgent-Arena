@@ -156,7 +156,12 @@ export interface UnstructuredIOConfig {
   strategy?: string;
 }
 
-export type ProviderConfig = LlamaIndexConfig | ReductoConfig | LandingAIConfig | UnstructuredIOConfig;
+export interface ExtendAIConfig {
+  mode: string;
+  agentic_ocr?: boolean;
+}
+
+export type ProviderConfig = LlamaIndexConfig | ReductoConfig | LandingAIConfig | UnstructuredIOConfig | ExtendAIConfig;
 
 export interface BattleAssignment {
   label: string;

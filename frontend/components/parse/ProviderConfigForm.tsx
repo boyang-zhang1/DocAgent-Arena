@@ -11,13 +11,14 @@ import {
 } from "@/components/ui/select";
 import { Settings } from "lucide-react";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
-import type { LlamaIndexConfig, ReductoConfig, LandingAIConfig, UnstructuredIOConfig } from "@/types/api";
+import type { LlamaIndexConfig, ReductoConfig, LandingAIConfig, UnstructuredIOConfig, ExtendAIConfig } from "@/types/api";
 import {
   ProviderPricingMap,
   formatOptionDescription,
   llamaIndexConfigToValue,
   reductoConfigToValue,
   unstructuredioConfigToValue,
+  extendaiConfigToValue,
   getModelOptionForConfig,
 } from "@/lib/modelUtils";
 
@@ -29,6 +30,7 @@ interface ProviderConfigs {
   reducto?: ReductoConfig;
   landingai?: LandingAIConfig;
   unstructuredio?: UnstructuredIOConfig;
+  extendai?: ExtendAIConfig;
 }
 
 interface ProviderConfigFormProps {
@@ -53,6 +55,7 @@ export function ProviderConfigForm({
     "reducto",
     "landingai",
     "unstructuredio",
+    "extendai",
   ]);
   const [configs, setConfigs] = useState<ProviderConfigs>({
     llamaindex: {
@@ -72,12 +75,17 @@ export function ProviderConfigForm({
       mode: "fast",
       strategy: "fast",
     },
+    extendai: {
+      mode: "standard",
+      agentic_ocr: false,
+    },
   });
 
   const llamaOptions = pricing?.llamaindex?.models ?? [];
   const reductoOptions = pricing?.reducto?.models ?? [];
   const landingaiOptions = pricing?.landingai?.models ?? [];
   const unstructuredioOptions = pricing?.unstructuredio?.models ?? [];
+  const extendaiOptions = pricing?.extendai?.models ?? [];
   const landingaiValue =
     landingaiOptions.find((option) => option.value === configs.landingai?.mode)?.value ||
     configs.landingai?.mode ||
@@ -87,6 +95,11 @@ export function ProviderConfigForm({
     unstructuredioOptions.find((option) => option.value === configs.unstructuredio?.mode)?.value ||
     configs.unstructuredio?.mode ||
     unstructuredioOptions[0]?.value ||
+    "";
+  const extendaiValue =
+    extendaiOptions.find((option) => option.value === configs.extendai?.mode)?.value ||
+    configs.extendai?.mode ||
+    extendaiOptions[0]?.value ||
     "";
 
   // Load configs and selection from localStorage on mount
@@ -155,6 +168,7 @@ export function ProviderConfigForm({
       updateProvider("reducto");
       updateProvider("landingai");
       updateProvider("unstructuredio");
+      updateProvider("extendai");
 
       if (!changed) {
         return current;
@@ -216,7 +230,7 @@ export function ProviderConfigForm({
         <h2 className="text-lg font-semibold">Provider Configuration</h2>
       </div>
 
-      <div className="grid grid-cols-4 gap-6">
+      <div className="grid grid-cols-5 gap-6">
         {/* LlamaIndex Column */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 mb-2">
@@ -409,6 +423,56 @@ export function ProviderConfigForm({
             </SelectContent>
           </Select>
           {unstructuredioOptions.length === 0 && (
+            <p className="mt-2 text-xs text-gray-500">
+              {pricingLoading
+                ? "Loading pricing..."
+                : pricingError || "Pricing data unavailable."}
+            </p>
+          )}
+        </div>
+
+        {/* ExtendAI Column */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <Checkbox
+              id="provider-extendai"
+              checked={selectedProviders.includes("extendai")}
+              onCheckedChange={() => handleProviderToggle("extendai")}
+              disabled={disabled}
+            />
+            <ProviderLabel
+              provider="extendai"
+              size={20}
+              className="gap-2"
+              nameClassName="text-sm font-medium"
+            />
+          </div>
+          <Select
+            value={extendaiValue || undefined}
+            onValueChange={(value) => {
+              const option = extendaiOptions.find((model) => model.value === value);
+              if (option) {
+                handleFullConfigChange("extendai", option.config);
+              }
+            }}
+            disabled={
+              disabled ||
+              !selectedProviders.includes("extendai") ||
+              extendaiOptions.length === 0
+            }
+          >
+            <SelectTrigger id="extendai-mode">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {extendaiOptions.map((model) => (
+                <SelectItem key={model.value} value={model.value}>
+                  {formatOptionDescription(model)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {extendaiOptions.length === 0 && (
             <p className="mt-2 text-xs text-gray-500">
               {pricingLoading
                 ? "Loading pricing..."

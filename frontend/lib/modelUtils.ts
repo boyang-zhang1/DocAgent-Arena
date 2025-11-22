@@ -3,6 +3,7 @@ import type {
   ReductoConfig,
   LandingAIConfig,
   UnstructuredIOConfig,
+  ExtendAIConfig,
   ModelOption,
   ProviderPricingInfo,
 } from "@/types/api";
@@ -58,11 +59,16 @@ export function unstructuredioConfigToValue(config?: UnstructuredIOConfig): stri
   return config?.mode || "";
 }
 
+export function extendaiConfigToValue(config?: ExtendAIConfig): string {
+  return config?.mode || "";
+}
+
 const PROVIDER_FALLBACK_LABELS: Record<string, string> = {
   llamaindex: "Agentic",
   reducto: "Standard",
   landingai: "DPT-2",
   unstructuredio: "Fast",
+  extendai: "Standard",
 };
 
 function matchesConfig(option: ModelOption, config?: Record<string, any>): boolean {
