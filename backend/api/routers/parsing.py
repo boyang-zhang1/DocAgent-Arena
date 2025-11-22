@@ -1,6 +1,7 @@
 """API endpoints for PDF parsing and comparison."""
 
 import asyncio
+import json
 import logging
 import os
 import random
@@ -12,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from prisma import Prisma, Json
 from pypdf import PdfReader, PdfWriter
 
@@ -868,6 +869,373 @@ async def compare_parsers(request: ParseCompareRequest, db: Prisma = Depends(get
         task.add_done_callback(lambda _: PENDING_BATTLE_TASKS.pop(battle_id, None))
 
     return ParseCompareResponse(file_id=request.file_id, results=results, battle=battle_metadata)
+
+
+@router.post("/compare-stream")
+async def compare_parsers_stream(request: ParseCompareRequest, db: Prisma = Depends(get_db)):
+    """
+    Compare PDF parsing across multiple providers with real-time progress updates via SSE.
+
+    This endpoint streams progress events as each provider completes parsing,
+    allowing the frontend to show real-time feedback.
+
+    SSE Event Types:
+        - started: Initial event with list of providers
+        - progress: Provider completed parsing
+        - error: Provider encountered an error
+        - done: All providers completed, contains final results
+
+    Args:
+        request: ParseCompareRequest with file_id, provider list, and API keys
+
+    Returns:
+        StreamingResponse with Server-Sent Events (SSE)
+    """
+    # Validate file exists
+    pdf_path = TEMP_DIR / f"{request.file_id}.pdf"
+    if not pdf_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"File not found: {request.file_id}. Please upload the file first.",
+        )
+
+    # Determine providers and battle mode (reuse existing logic)
+    requested_providers = request.providers or []
+    battle_mode = len(requested_providers) == 0 or (
+        len(requested_providers) >= 2 and request.page_number is not None
+    )
+
+    if len(requested_providers) == 0:
+        providers = _select_battle_providers()
+    elif battle_mode:
+        providers = _select_battle_providers(allowed_providers=requested_providers)
+    else:
+        providers = requested_providers
+
+    providers = list(dict.fromkeys(providers))
+
+    if battle_mode and request.page_number is None:
+        raise HTTPException(status_code=400, detail="Battle mode requires a specific page selection.")
+
+    # Extract a single page if requested
+    selected_pdf_path = pdf_path
+    if request.page_number is not None:
+        try:
+            selected_pdf_path = _extract_single_page(pdf_path, request.page_number)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    # Setup debug mode if enabled
+    debug_info = None
+    if request.debug:
+        print(f"[DEBUG MODE] Enabled for file: {request.filename or request.file_id}")
+        debug_dir = TEMP_DIR / "debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_filename = request.filename or request.file_id
+        if base_filename.endswith(".pdf"):
+            base_filename = base_filename[:-4]
+
+        debug_info = {
+            "enabled": True,
+            "debug_dir": debug_dir,
+            "base_filename": base_filename,
+            "timestamp": timestamp,
+        }
+
+    try:
+        pricing_config = load_pricing_config()
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    request_configs = request.configs or {}
+    resolved_configs: Dict[str, Dict[str, Any]] = {}
+
+    for provider in providers:
+        user_config = request_configs.get(provider) or DEFAULT_PROVIDER_CONFIGS.get(provider) or {}
+        try:
+            resolved_config = _resolve_provider_config(provider, user_config, pricing_config)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        resolved_configs[provider] = resolved_config
+
+    # Initialize parsers (reuse existing logic)
+    parsers: Dict[str, any] = {}
+
+    try:
+        if "llamaindex" in providers:
+            config = resolved_configs.get("llamaindex")
+            if not config:
+                config = _resolve_provider_config("llamaindex", DEFAULT_PROVIDER_CONFIGS.get("llamaindex"), pricing_config)
+            parse_mode = config.get("parse_mode", "parse_page_with_agent")
+            model = config.get("model", "openai-gpt-4-1-mini")
+            api_key = os.getenv("LLAMAINDEX_API_KEY")
+            if not api_key:
+                raise ValueError("LLAMAINDEX_API_KEY not configured in backend environment")
+            parsers["llamaindex"] = LlamaIndexParser(api_key=api_key, parse_mode=parse_mode, model=model)
+
+        if "reducto" in providers:
+            config = resolved_configs.get("reducto")
+            if not config:
+                config = _resolve_provider_config("reducto", DEFAULT_PROVIDER_CONFIGS.get("reducto"), pricing_config)
+            summarize_figures = config.get("summarize_figures", False)
+            if "mode" in config:
+                summarize_figures = config["mode"] == "complex"
+            api_key = os.getenv("REDUCTO_API_KEY")
+            if not api_key:
+                raise ValueError("REDUCTO_API_KEY not configured in backend environment")
+            parsers["reducto"] = ReductoParser(api_key=api_key, summarize_figures=summarize_figures)
+
+        if "landingai" in providers:
+            config = resolved_configs.get("landingai")
+            if not config:
+                config = _resolve_provider_config("landingai", DEFAULT_PROVIDER_CONFIGS.get("landingai"), pricing_config)
+            model = config.get("model", "dpt-2")
+            provider_pricing = pricing_config.get("landingai", {})
+            mode = config.get("mode")
+            entry = _select_pricing_entry("landingai", provider_pricing, mode=mode, config=config)
+            credits_per_page = entry.get("credits_per_page", 3.0) if entry else 3.0
+            api_key_str = os.getenv("VISION_AGENT_API_KEY")
+            if not api_key_str:
+                raise ValueError("VISION_AGENT_API_KEY not configured in backend environment")
+            api_keys = [key.strip() for key in api_key_str.split(",") if key.strip()]
+            if not api_keys:
+                raise ValueError("VISION_AGENT_API_KEY is empty after parsing")
+            parsers["landingai"] = LandingAIParser(api_keys=api_keys, model=model, credits_per_page=credits_per_page)
+
+        if "unstructuredio" in providers:
+            config = resolved_configs.get("unstructuredio")
+            if not config:
+                config = _resolve_provider_config("unstructuredio", DEFAULT_PROVIDER_CONFIGS.get("unstructuredio"), pricing_config)
+            strategy = config.get("strategy", "fast")
+            vlm_model = config.get("vlm_model")
+            vlm_model_provider = config.get("vlm_model_provider")
+            api_key = os.getenv("UNSTRUCTURED_API_KEY")
+            if not api_key:
+                raise ValueError("UNSTRUCTURED_API_KEY not configured in backend environment")
+            parsers["unstructuredio"] = UnstructuredParser(api_key=api_key, strategy=strategy, vlm_model=vlm_model, vlm_model_provider=vlm_model_provider)
+
+        if "extendai" in providers:
+            config = resolved_configs.get("extendai")
+            if not config:
+                config = _resolve_provider_config("extendai", DEFAULT_PROVIDER_CONFIGS.get("extendai"), pricing_config)
+            agentic_ocr = config.get("agentic_ocr", False)
+            if "mode" in config:
+                agentic_ocr = config["mode"] == "agentic-ocr"
+            api_key = os.getenv("EXTENDAI_API_KEY")
+            if not api_key:
+                raise ValueError("EXTENDAI_API_KEY not configured in backend environment")
+            parsers["extendai"] = ExtendAIParser(api_key=api_key, agentic_ocr=agentic_ocr)
+
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"Configuration error: {str(e)}")
+
+    if not parsers:
+        raise HTTPException(status_code=400, detail="No valid providers available for parsing.")
+
+    # SSE event generator
+    async def event_generator():
+        """Generate SSE events as providers complete parsing."""
+
+        def sse_event(event_type: str, data: dict) -> str:
+            """Format an SSE event."""
+            return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+
+        try:
+            # Prepare battle assignments if in battle mode (BEFORE parsing starts)
+            battle_assignments = None
+            provider_to_label = {}
+            if battle_mode:
+                battle_assignments, provider_to_label = _prepare_battle_assignments(providers)
+
+            # Send started event with battle assignments for blind labels
+            started_data = {
+                "providers": providers,
+                "total": len(providers),
+                "battle_mode": battle_mode
+            }
+            if battle_mode and battle_assignments:
+                started_data["assignments"] = [a.model_dump() for a in battle_assignments]
+
+            yield sse_event("started", started_data)
+
+            # Create queue for real-time result streaming
+            result_queue = asyncio.Queue()
+
+            # Synchronous wrapper to run async parse_pdf in thread pool
+            def _sync_parse_wrapper(parser, pdf_path, debug_info):
+                """
+                Synchronous wrapper to run async parse_pdf in a separate thread.
+
+                This is needed because parsers use synchronous HTTP clients that block
+                the event loop. By running each parser in its own thread with its own
+                event loop, they can truly run in parallel.
+                """
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(parser.parse_pdf(pdf_path, debug_info))
+                finally:
+                    loop.close()
+
+            # Wrapper function that puts results in queue immediately
+            async def parse_with_provider(provider: str, parser):
+                """Parse in thread pool and immediately put result in queue for streaming."""
+                if request.debug:
+                    import time
+                    start_time = time.time()
+                    start_ms = int(start_time * 1000)
+                    logger.info(f"[DEBUG] {provider} starting at {start_ms}ms")
+
+                try:
+                    # Run synchronous parse in thread pool for true parallelism
+                    result = await asyncio.to_thread(
+                        _sync_parse_wrapper,
+                        parser,
+                        selected_pdf_path,
+                        debug_info
+                    )
+
+                    if request.debug:
+                        end_time = time.time()
+                        end_ms = int(end_time * 1000)
+                        duration = end_time - start_time
+                        logger.info(f"[DEBUG] {provider} finished at {end_ms}ms, duration: {duration:.2f}s")
+
+                    await result_queue.put(("success", provider, result))
+                except Exception as e:
+                    if request.debug:
+                        end_time = time.time()
+                        end_ms = int(end_time * 1000)
+                        duration = end_time - start_time
+                        logger.error(f"[DEBUG] {provider} failed at {end_ms}ms, duration: {duration:.2f}s - {str(e)}")
+
+                    await result_queue.put(("error", provider, e))
+
+            # Create all tasks - they run in parallel using thread pool
+            tasks = [
+                asyncio.create_task(parse_with_provider(provider, parser))
+                for provider, parser in parsers.items()
+            ]
+
+            parse_results = {}
+            completed_count = 0
+
+            # Stream results from queue as they arrive
+            for _ in range(len(tasks)):
+                status, provider, data = await result_queue.get()
+                completed_count += 1
+
+                # Use blind label if in battle mode
+                display_name = provider_to_label.get(provider, provider) if battle_mode else provider
+
+                if status == "error":
+                    error = data
+                    logger.error(f"Provider {provider} failed: {str(error)}")
+                    yield sse_event("error", {
+                        "provider": display_name,
+                        "error": str(error),
+                        "completed": completed_count,
+                        "total": len(providers)
+                    })
+                else:
+                    parse_result = data
+                    parse_results[provider] = parse_result
+
+                    yield sse_event("progress", {
+                        "provider": display_name,
+                        "status": "completed",
+                        "completed": completed_count,
+                        "total": len(providers),
+                        "processing_time": parse_result.processing_time
+                    })
+
+            # Format results (reuse existing logic)
+            results = {}
+            for provider, parse_result in parse_results.items():
+                provider_config = resolved_configs.get(provider, {})
+                mode = provider_config.get("mode")
+                if mode:
+                    usage_payload = parse_result.usage or {}
+                    if usage_payload.get("mode") != mode:
+                        usage_payload = {**usage_payload, "mode": mode}
+                    parse_result.usage = usage_payload
+
+                provider_result = ProviderParseResult(
+                    total_pages=parse_result.total_pages,
+                    pages=[
+                        PageData(
+                            page_number=page.page_number,
+                            markdown=page.markdown,
+                            images=page.images,
+                            metadata=page.metadata,
+                        )
+                        for page in parse_result.pages
+                    ],
+                    processing_time=parse_result.processing_time,
+                    usage=parse_result.usage,
+                )
+                results[provider] = provider_result
+
+            # Handle battle metadata
+            battle_metadata: Optional[BattleMetadata] = None
+            if battle_mode:
+                battle_id = str(uuid.uuid4())
+                # Reuse the assignments we created earlier
+                battle_metadata = BattleMetadata(
+                    battle_id=battle_id,
+                    assignments=battle_assignments,
+                )
+
+                # Fire-and-forget persistence
+                task = asyncio.create_task(
+                    _persist_battle_run(
+                        prisma_client=db,
+                        battle_id=battle_id,
+                        upload_file_id=request.file_id,
+                        original_name=request.filename or f"{request.file_id}.pdf",
+                        storage_input_path=selected_pdf_path,
+                        page_number=request.page_number or 1,
+                        providers=list(parse_results.keys()),
+                        provider_to_label=provider_to_label,
+                        assignments=battle_assignments,
+                        parse_results=list(parse_results.values()),
+                        configs=resolved_configs,
+                    )
+                )
+                PENDING_BATTLE_TASKS[battle_id] = task
+                task.add_done_callback(lambda _: PENDING_BATTLE_TASKS.pop(battle_id, None))
+
+            # Send final done event with complete results
+            response_data = ParseCompareResponse(
+                file_id=request.file_id,
+                results=results,
+                battle=battle_metadata
+            )
+
+            yield sse_event("done", {
+                "file_id": response_data.file_id,
+                "results": {k: v.model_dump() for k, v in response_data.results.items()},
+                "battle": battle_metadata.model_dump() if battle_metadata else None
+            })
+
+        except Exception as e:
+            logger.error(f"Stream error: {str(e)}", exc_info=True)
+            yield sse_event("error", {
+                "provider": "system",
+                "error": f"Stream error: {str(e)}"
+            })
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Disable nginx buffering
+        }
+    )
 
 
 @router.post("/battle-feedback", response_model=BattleFeedbackResponse)

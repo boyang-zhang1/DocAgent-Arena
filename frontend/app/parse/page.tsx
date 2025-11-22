@@ -13,7 +13,7 @@ import { PageNavigator } from "@/components/parse/PageNavigator";
 import { ProviderLabel } from "@/components/providers/ProviderLabel";
 import { Button } from "@/components/ui/button";
 import { ContactIcons } from "@/components/ui/ContactIcons";
-import { FileText, Loader2 } from "lucide-react";
+import { FileText, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import { getProviderDisplayName } from "@/lib/providerMetadata";
 import type { LlamaIndexConfig, ReductoConfig, LandingAIConfig } from "@/types/api";
@@ -76,6 +76,7 @@ export default function ParsePage() {
   const [isLoadingPageCount, setIsLoadingPageCount] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [providerStatus, setProviderStatus] = useState<Record<string, 'pending' | 'running' | 'completed' | 'error'>>({});
 
   const { pricingMap, loading: pricingLoading, error: pricingError } = useProviderPricing();
 
@@ -120,6 +121,7 @@ export default function ParsePage() {
 
     setIsParsing(true);
     setError(null);
+    setProviderStatus({});
 
     try {
       // Prepare configs for selected providers
@@ -130,13 +132,40 @@ export default function ParsePage() {
         }
       });
 
-      const data = await apiClient.compareParses({
-        fileId,
-        providers: selectedProviders,
-        configs,
-        filename: fileName || undefined,
-        debug: debugMode,
-      });
+      // Use streaming API with progress callback
+      const data = await apiClient.compareParsesStream(
+        {
+          fileId,
+          providers: selectedProviders,
+          configs,
+          filename: fileName || undefined,
+          debug: debugMode,
+        },
+        (event) => {
+          // Handle progress events
+          if (event.type === 'started') {
+            // Initialize all providers as running
+            const initialStatus: Record<string, 'running'> = {};
+            event.data.providers.forEach((provider: string) => {
+              initialStatus[provider] = 'running';
+            });
+            setProviderStatus(initialStatus);
+          } else if (event.type === 'progress') {
+            // Provider completed
+            setProviderStatus(prev => ({
+              ...prev,
+              [event.data.provider]: 'completed'
+            }));
+          } else if (event.type === 'error') {
+            // Provider failed
+            setProviderStatus(prev => ({
+              ...prev,
+              [event.data.provider]: 'error'
+            }));
+          }
+        }
+      );
+
       setParseResults(data.results);
 
       // Set total pages from first available provider
@@ -280,12 +309,57 @@ export default function ParsePage() {
           )}
 
           {isParsing ? (
-            <div className="text-center py-12">
-              <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-blue-500" />
-              <p className="text-lg font-medium">Parsing PDF...</p>
-              <p className="text-sm text-gray-500 mt-2">
-                This may take a few moments
-              </p>
+            <div className="max-w-2xl mx-auto py-12">
+              <div className="text-center mb-8">
+                <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-blue-500" />
+                <p className="text-lg font-medium">Parsing PDF...</p>
+                <p className="text-sm text-gray-500 mt-2">
+                  This may take a few moments
+                </p>
+              </div>
+
+              {/* Provider Progress List */}
+              <div className="space-y-3 bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+                <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
+                  Provider Status:
+                </p>
+                {Object.entries(providerStatus).map(([provider, status]) => (
+                  <div
+                    key={provider}
+                    className="flex items-center justify-between p-3 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700"
+                  >
+                    <div className="flex items-center gap-3">
+                      <ProviderLabel provider={provider} size={20} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {status === 'running' && (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                          <span className="text-sm text-gray-600 dark:text-gray-400">
+                            Running...
+                          </span>
+                        </>
+                      )}
+                      {status === 'completed' && (
+                        <>
+                          <CheckCircle2 className="h-4 w-4 text-green-500" />
+                          <span className="text-sm text-green-600 dark:text-green-400">
+                            Completed
+                          </span>
+                        </>
+                      )}
+                      {status === 'error' && (
+                        <>
+                          <XCircle className="h-4 w-4 text-red-500" />
+                          <span className="text-sm text-red-600 dark:text-red-400">
+                            Failed
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : parseResults ? (
             <>

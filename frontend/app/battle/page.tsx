@@ -12,7 +12,7 @@ import { ModelSelectionCard } from "@/components/battle/ModelSelectionCard";
 import { BattleCharacters } from "@/components/battle/BattleCharacters";
 import { Button } from "@/components/ui/button";
 import { ContactIcons } from "@/components/ui/ContactIcons";
-import { Loader2, FileText, Swords } from "lucide-react";
+import { Loader2, FileText, Swords, CheckCircle2, XCircle } from "lucide-react";
 import { apiClient } from "@/lib/api-client";
 import {
   type BattleMetadata,
@@ -67,6 +67,8 @@ export default function BattlePage() {
   const [isLoadingPageCount, setIsLoadingPageCount] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [providerStatus, setProviderStatus] = useState<Record<string, 'pending' | 'running' | 'completed' | 'error'>>({});
+  const [labelAssignments, setLabelAssignments] = useState<Record<string, string>>({});
 
   const [parseResults, setParseResults] = useState<Record<string, ProviderParseResult> | null>(null);
   const [battleMeta, setBattleMeta] = useState<BattleMetadata | null>(null);
@@ -194,16 +196,59 @@ export default function BattlePage() {
     setIsParsing(true);
     setError(null);
     setFeedbackError(null);
+    setProviderStatus({});
+    setLabelAssignments({});
 
     try {
-      const data = await apiClient.compareParses({
-        fileId,
-        pageNumber: currentPage,
-        filename: fileName || undefined,
-        configs: selectedConfigs,
-        providers: debugMode ? enabledProviders : undefined,
-        debug: debugMode,
-      });
+      // Use streaming API with progress callback
+      const data = await apiClient.compareParsesStream(
+        {
+          fileId,
+          pageNumber: currentPage,
+          filename: fileName || undefined,
+          configs: selectedConfigs,
+          providers: debugMode ? enabledProviders : undefined,
+          debug: debugMode,
+        },
+        (event) => {
+          // Handle progress events
+          if (event.type === 'started') {
+            // Store label assignments for battle mode
+            if (event.data.battle_mode && event.data.assignments) {
+              const assignments: Record<string, string> = {};
+              event.data.assignments.forEach((a: any) => {
+                assignments[a.label] = a.provider;
+              });
+              setLabelAssignments(assignments);
+            }
+
+            // Initialize all providers as running (use labels for battle mode)
+            const initialStatus: Record<string, 'running'> = {};
+            if (event.data.battle_mode && event.data.assignments) {
+              event.data.assignments.forEach((a: any) => {
+                initialStatus[a.label] = 'running';
+              });
+            } else {
+              event.data.providers.forEach((provider: string) => {
+                initialStatus[provider] = 'running';
+              });
+            }
+            setProviderStatus(initialStatus);
+          } else if (event.type === 'progress') {
+            // Provider completed (already using label if in battle mode)
+            setProviderStatus(prev => ({
+              ...prev,
+              [event.data.provider]: 'completed'
+            }));
+          } else if (event.type === 'error') {
+            // Provider failed (already using label if in battle mode)
+            setProviderStatus(prev => ({
+              ...prev,
+              [event.data.provider]: 'error'
+            }));
+          }
+        }
+      );
 
       if (!data.battle) {
         throw new Error("Battle metadata missing. Please try again.");
@@ -406,7 +451,7 @@ export default function BattlePage() {
           )}
 
           {isParsing && (
-            <div className="space-y-4">
+            <div className="space-y-6">
               {/* Show fighting robots during parsing */}
               <BattleCharacters
                 isParsing={isParsing}
@@ -415,6 +460,63 @@ export default function BattlePage() {
                 assignments={assignments.length > 0 ? assignments : []}
                 preferredLabels={null}
               />
+
+              {/* Provider Progress List */}
+              {Object.keys(providerStatus).length > 0 && (
+                <div className="max-w-2xl mx-auto">
+                  <div className="space-y-3 bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">
+                      Provider Status:
+                    </p>
+                    {Object.entries(providerStatus).map(([providerOrLabel, status]) => {
+                      // Check if this is a blind label (A, B, C, D) or actual provider name
+                      const isBlindLabel = /^[A-D]$/.test(providerOrLabel);
+                      const displayLabel = isBlindLabel ? `Provider ${providerOrLabel}` : providerOrLabel;
+
+                      return (
+                        <div
+                          key={providerOrLabel}
+                          className="flex items-center justify-between p-3 bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700"
+                        >
+                          <div className="flex items-center gap-3">
+                            {isBlindLabel ? (
+                              <span className="text-sm font-medium">{displayLabel}</span>
+                            ) : (
+                              <ProviderLabel provider={providerOrLabel} size={20} />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                          {status === 'running' && (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                              <span className="text-sm text-gray-600 dark:text-gray-400">
+                                Running...
+                              </span>
+                            </>
+                          )}
+                          {status === 'completed' && (
+                            <>
+                              <CheckCircle2 className="h-4 w-4 text-green-500" />
+                              <span className="text-sm text-green-600 dark:text-green-400">
+                                Completed
+                              </span>
+                            </>
+                          )}
+                          {status === 'error' && (
+                            <>
+                              <XCircle className="h-4 w-4 text-red-500" />
+                              <span className="text-sm text-red-600 dark:text-red-400">
+                                Failed
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

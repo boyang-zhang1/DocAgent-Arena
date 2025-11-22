@@ -254,6 +254,145 @@ class ApiClient {
   }
 
   /**
+   * Compare PDF parsing with real-time progress updates via SSE
+   *
+   * @param params Same parameters as compareParses
+   * @param onProgress Callback for progress events (started, progress, error)
+   * @returns Promise that resolves with final parse results
+   */
+  async compareParsesStream(
+    params: {
+      fileId: string;
+      providers?: string[];
+      configs?: Record<string, any>;
+      pageNumber?: number;
+      filename?: string;
+      debug?: boolean;
+    },
+    onProgress?: (event: {
+      type: 'started' | 'progress' | 'error';
+      data: any;
+    }) => void
+  ): Promise<ParseCompareResponse> {
+    const payload: ParseCompareRequest = {
+      file_id: params.fileId,
+    };
+
+    if (params.providers !== undefined) {
+      payload.providers = params.providers;
+    }
+    if (params.configs && Object.keys(params.configs).length > 0) {
+      payload.configs = params.configs;
+    }
+    if (typeof params.pageNumber === 'number') {
+      payload.page_number = params.pageNumber;
+    }
+    if (params.filename) {
+      payload.filename = params.filename;
+    }
+    if (params.debug !== undefined) {
+      payload.debug = params.debug;
+    }
+
+    return new Promise((resolve, reject) => {
+      // Use fetch with streaming instead of EventSource for better error handling
+      fetch(`${this.baseUrl}/api/v1/parse/compare-stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          if (!response.body) {
+            throw new Error('ReadableStream not supported');
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          // Process SSE stream
+          while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) {
+              break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Process complete SSE events (delimited by \n\n)
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || ''; // Keep incomplete event in buffer
+
+            for (const event of events) {
+              if (!event.trim()) continue;
+
+              // Parse SSE format: "event: type\ndata: {...}"
+              const lines = event.split('\n');
+              let eventType = 'message';
+              let eventData = '';
+
+              for (const line of lines) {
+                if (line.startsWith('event:')) {
+                  eventType = line.substring(6).trim();
+                } else if (line.startsWith('data:')) {
+                  eventData = line.substring(5).trim();
+                }
+              }
+
+              if (!eventData) continue;
+
+              try {
+                const data = JSON.parse(eventData);
+
+                // Handle different event types
+                if (eventType === 'done') {
+                  // Final results received
+                  resolve({
+                    file_id: data.file_id,
+                    results: data.results,
+                    battle: data.battle,
+                  });
+                  return;
+                } else if (eventType === 'started' || eventType === 'progress') {
+                  // Progress update
+                  if (onProgress) {
+                    onProgress({ type: eventType as 'started' | 'progress', data });
+                  }
+                } else if (eventType === 'error') {
+                  // Provider error (non-fatal)
+                  if (onProgress) {
+                    onProgress({ type: 'error', data });
+                  }
+                  // If it's a system error, reject
+                  if (data.provider === 'system') {
+                    reject(new Error(data.error));
+                    return;
+                  }
+                }
+              } catch (e) {
+                console.error('Failed to parse SSE event:', e, eventData);
+              }
+            }
+          }
+
+          // If we reach here without a 'done' event, something went wrong
+          reject(new Error('Stream ended without final results'));
+        })
+        .catch((error) => {
+          reject(error);
+        });
+    });
+  }
+
+  /**
    * Calculate costs for parse results
    *
    * @param parseResults Parse results from compareParses
