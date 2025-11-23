@@ -283,10 +283,10 @@ export function MarkdownViewer({
         </code>
       );
     },
-    // Custom img handler to prevent empty src warnings
+    // Custom img handler to prevent empty src warnings and broken image filenames
     img: ({ src, alt, ...props }) => {
-      // Don't render if src is empty or undefined
-      if (!src) return null;
+      // Don't render if src is empty, undefined, or just a filename (not a valid URL)
+      if (!src || typeof src !== 'string' || !src.match(/^(https?:\/\/|data:|\/)/)) return null;
 
       return (
         <img
